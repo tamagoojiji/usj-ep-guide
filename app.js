@@ -271,6 +271,16 @@
       });
       otherContainer.innerHTML = othersHtml;
     }
+
+    // プランニングCTAのハイライト（節約選択時）
+    var planningCta = document.getElementById("planning-cta");
+    if (planningCta) {
+      if (selectedBudget === "save") {
+        planningCta.classList.add("highlight");
+      } else {
+        planningCta.classList.remove("highlight");
+      }
+    }
   }
 
   // === 結果カードHTML生成 ===

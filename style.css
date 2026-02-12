@@ -608,6 +608,106 @@ body {
   line-height: 1.6;
 }
 
+/* === たまごのプランニングCTA === */
+.planning-cta {
+  margin-top: 24px;
+  padding: 16px;
+  background: linear-gradient(135deg, #FFF8E1, #FFF3E0);
+  border: 2px solid #FFD54F;
+  border-radius: 14px;
+  text-align: left;
+  animation: fadeSlideIn 0.6s ease;
+}
+
+.planning-cta.highlight {
+  border-width: 3px;
+  box-shadow: 0 4px 16px rgba(255, 193, 7, 0.25);
+}
+
+.planning-cta-profile {
+  width: 100%;
+  border-radius: 8px;
+  display: block;
+  margin-bottom: 14px;
+}
+
+.planning-cta-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: #333;
+  text-align: center;
+  margin-bottom: 2px;
+}
+
+.planning-cta-price {
+  font-size: 22px;
+  font-weight: 800;
+  color: #F5A623;
+  text-align: center;
+  margin-bottom: 14px;
+}
+
+.planning-cta-body {
+  margin-bottom: 14px;
+  text-align: center;
+}
+
+.planning-cta-point {
+  font-size: 13px;
+  color: #555;
+  line-height: 1.8;
+}
+
+.planning-cta-point strong {
+  color: #E08A00;
+  font-weight: 800;
+}
+
+.planning-cta-dm {
+  font-size: 13px;
+  color: #F5A623;
+  font-weight: 700;
+  margin-top: 6px;
+}
+
+.planning-cta-links {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-planning {
+  flex: 1;
+  background: #F5A623;
+  color: #fff;
+  padding: 10px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.btn-planning:hover {
+  background: #E09500;
+  transform: translateY(-1px);
+}
+
+.btn-planning-sub {
+  flex: 1;
+  background: #fff;
+  color: #F5A623;
+  border: 2px solid #F5A623;
+  padding: 10px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.btn-planning-sub:hover {
+  background: #FFF8E1;
+  transform: translateY(-1px);
+}
+
 /* === アクション === */
 .result-actions {
   display: flex;
