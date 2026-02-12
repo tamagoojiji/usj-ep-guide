@@ -10,7 +10,7 @@
   var isTransitioning = false;
 
   // === 画面ID ===
-  var screenIds = ["screen-top", "screen-date", "screen-height", "screen-attractions", "screen-budget", "screen-result"];
+  var screenIds = ["screen-top", "screen-date", "screen-height", "screen-attractions", "screen-budget", "screen-result", "screen-expired"];
 
   // === 画面遷移 ===
   function showScreen(id) {
@@ -321,17 +321,52 @@
     return html;
   }
 
+  // === アトラクションが時間指定かどうか ===
+  function isTimeDesignated(pass, attractionName) {
+    if (!pass.timeDesignated || pass.timeDesignated.length === 0) return false;
+    return pass.timeDesignated.some(function (td) {
+      return attractionName === td;
+    });
+  }
+
+  // === アトラクションタグHTML生成（時間指定・マッチ対応） ===
+  function buildAttractionTag(pass, name) {
+    var matched = isAttractionMatched(name);
+    var timed = isTimeDesignated(pass, name);
+    var cls = "attraction-tag";
+    if (matched) cls += " matched";
+    if (timed) cls += " time-designated";
+    var icon = timed ? '<span class="td-icon">🕐</span>' : '';
+    return '<li class="' + cls + '">' + icon + name + '</li>';
+  }
+
   // === アトラクションセクション ===
   function buildAttractionsSection(pass) {
     var html = '<div class="info-section">';
     html += '<h4 class="info-title">含まれるアトラクション</h4>';
+
+    // 時間指定の凡例
+    if (pass.timeDesignated && pass.timeDesignated.length > 0) {
+      html += '<div class="td-legend">';
+      html += '<span class="td-legend-item"><span class="td-icon">🕐</span> = 体験時間が指定されます</span>';
+      html += '</div>';
+    } else if (pass.type === "premium" || pass.type === "ep7") {
+      html += '<div class="td-legend td-legend-free">';
+      html += '<span class="td-legend-item">全アトラクション時間指定なし（いつでも利用可能）</span>';
+      html += '</div>';
+    }
+
+    // エリア入場（時間指定の場合）
+    if (pass.timeDesignated && pass.timeDesignated.indexOf("スーパー・ニンテンドー・ワールド入場") !== -1) {
+      html += '<ul class="attractions-list">';
+      html += '<li class="attraction-tag time-designated area-entry-tag"><span class="td-icon">🕐</span>スーパー・ニンテンドー・ワールド入場</li>';
+      html += '</ul>';
+    }
+
     html += '<ul class="attractions-list">';
-
     pass.attractions.fixed.forEach(function (name) {
-      var matched = isAttractionMatched(name);
-      html += '<li class="attraction-tag' + (matched ? ' matched' : '') + '">' + name + '</li>';
+      html += buildAttractionTag(pass, name);
     });
-
     html += '</ul>';
 
     // 選択制1
@@ -339,8 +374,7 @@
       html += '<p class="selectable-label">△1 以下から1つ選べます</p>';
       html += '<ul class="attractions-list">';
       pass.attractions.selectable1.forEach(function (name) {
-        var matched = isAttractionMatched(name);
-        html += '<li class="attraction-tag' + (matched ? ' matched' : '') + '">' + name + '</li>';
+        html += buildAttractionTag(pass, name);
       });
       html += '</ul>';
     }
@@ -350,8 +384,7 @@
       html += '<p class="selectable-label">△2 以下から1つ選べます</p>';
       html += '<ul class="attractions-list">';
       pass.attractions.selectable2.forEach(function (name) {
-        var matched = isAttractionMatched(name);
-        html += '<li class="attraction-tag' + (matched ? ' matched' : '') + '">' + name + '</li>';
+        html += buildAttractionTag(pass, name);
       });
       html += '</ul>';
     }
@@ -436,8 +469,22 @@
     isTransitioning = false;
   }
 
+  // === 期限切れチェック ===
+  function isExpired() {
+    var now = new Date();
+    var expiry = new Date(2026, 3, 16); // 2026年4月16日（月は0始まり）
+    return now >= expiry;
+  }
+
   // === 初期化 ===
   function init() {
+    // 期限切れの場合はトップ画面を非表示にして期限切れ画面を表示
+    if (isExpired()) {
+      document.getElementById("screen-top").classList.add("hidden");
+      document.getElementById("screen-expired").classList.remove("hidden");
+      return;
+    }
+
     // スタートボタン
     document.getElementById("start-btn").addEventListener("click", function () {
       resetAll();

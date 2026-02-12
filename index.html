@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>エクスプレスパス診断 | USJ攻略</title>
-  <meta name="description" content="4つの質問に答えるだけで、あなたにピッタリのUSJエクスプレスパスが具体的な価格付きでわかる診断！">
-  <meta property="og:title" content="あなたにピッタリのエクスプレスパスは？">
+  <title>エクスプレスパス診断（2026年3月・4月限定）| USJ攻略</title>
+  <meta name="description" content="4つの質問に答えるだけで、あなたにピッタリのUSJエクスプレスパスが具体的な価格付きでわかる診断！（2026年3月・4月限定）">
+  <meta property="og:title" content="あなたにピッタリのエクスプレスパスは？（2026年3月・4月限定）">
   <meta property="og:description" content="4つの質問であなた専用のパスを診断！その日の価格もわかります。">
   <meta property="og:type" content="website">
   <link rel="stylesheet" href="style.css">
@@ -19,9 +19,15 @@
       <div class="top-content">
         <img src="images/character.png" alt="たまご" class="character-image">
         <h1 class="top-title">あなたにピッタリの<br>エクスプレスパスは？</h1>
+        <p class="top-period">2026年3月・4月限定</p>
         <p class="top-description">4つの質問であなた専用のパスを診断<br>その日の価格もわかります</p>
         <button id="start-btn" class="btn btn-primary btn-large">診断スタート</button>
-        <p class="disclaimer">※日付によっては完売している場合があります</p>
+        <div class="disclaimer-box">
+          <p>※本サービスはUSJ公式ではありません。</p>
+          <p>※日付によっては完売している場合があります。</p>
+          <p>※価格・内容は予告なく変更される場合があります。<br>必ず<a href="https://store.usj.co.jp/ja/jp/c/ticket" target="_blank" rel="noopener">公式サイト</a>で最新情報をご確認ください。</p>
+          <p class="last-updated">最終データ更新: 2026年2月12日</p>
+        </div>
       </div>
       <img src="images/footer.png" alt="たまご" class="footer-image">
     </div>
@@ -136,13 +142,37 @@
           </div>
         </div>
 
+        <!-- 公式サイト誘導（強調） -->
+        <div class="official-link-box">
+          <p class="official-link-lead">購入・最新情報は必ず公式サイトで確認してください</p>
+          <a href="https://store.usj.co.jp/ja/jp/c/ticket" target="_blank" rel="noopener" class="btn btn-official btn-large">USJ公式サイトで購入する</a>
+        </div>
+
         <!-- アクション -->
         <div class="result-actions">
           <button id="retry-btn" class="btn btn-primary btn-large">もう一度やる</button>
-          <a href="https://store.usj.co.jp/ja/jp/c/ticket" target="_blank" rel="noopener" class="btn btn-secondary btn-large">公式サイトで詳細を見る</a>
         </div>
 
-        <p class="disclaimer">※日付によっては完売している場合があります。<br>※価格・内容は変更になる場合があります。最新情報は公式サイトでご確認ください。<br>※本サービスはUSJ公式ではありません。</p>
+        <div class="disclaimer-box">
+          <p>※本サービスはUSJ公式ではありません。</p>
+          <p>※日付によっては完売している場合があります。</p>
+          <p>※価格・内容は予告なく変更される場合があります。<br>必ず<a href="https://store.usj.co.jp/ja/jp/c/ticket" target="_blank" rel="noopener">公式サイト</a>で最新情報をご確認ください。</p>
+          <p class="last-updated">最終データ更新: 2026年2月12日</p>
+        </div>
+      </div>
+      <img src="images/footer.png" alt="たまご" class="footer-image">
+    </div>
+  </div>
+
+  <!-- 期限切れ画面 -->
+  <div id="screen-expired" class="screen hidden">
+    <div class="container">
+      <img src="images/header.png" alt="USJ攻略" class="header-image">
+      <div class="top-content">
+        <img src="images/character.png" alt="たまご" class="character-image">
+        <h1 class="top-title">診断期間が<br>終了しました</h1>
+        <p class="top-description">この診断は2026年3月・4月限定です。<br>最新のエクスプレス・パス情報は<br>公式サイトをご確認ください。</p>
+        <a href="https://store.usj.co.jp/ja/jp/c/ticket" target="_blank" rel="noopener" class="btn btn-official btn-large">USJ公式サイトへ</a>
       </div>
       <img src="images/footer.png" alt="たまご" class="footer-image">
     </div>

@@ -23,7 +23,7 @@ var PASSES = [
     color: "#FFD700",
     colorBg: "#FFF8E1",
     borderColor: "#FFD700",
-    minHeight: 0,
+    minHeight: 132,
     areaEntry: ["nintendo", "harrypotter"],
     attractions: {
       fixed: [
@@ -48,6 +48,7 @@ var PASSES = [
     tags: ["donkey", "mario", "yoshi", "harrypotter", "dinosaur", "hollywood", "minion", "jurassic", "theater"],
     description: "全14アトラクションを網羅する最強パス。ニンテンドーエリアもウィザーディング・ワールドも入場確約付き。",
     advice: "「全部乗りたい！」という方に最適。混雑日はこれ一択で、1日を丸ごと満喫できます。",
+    timeDesignated: [],
     pricing: {
       "2026-03-22": 57400, "2026-03-23": 61600, "2026-03-24": 57400,
       "2026-03-25": 65800, "2026-03-31": 52500,
@@ -68,7 +69,7 @@ var PASSES = [
     color: "#4A90D9",
     colorBg: "#EBF3FB",
     borderColor: "#4A90D9",
-    minHeight: 0,
+    minHeight: 122,
     areaEntry: ["nintendo", "harrypotter"],
     attractions: {
       fixed: [
@@ -84,6 +85,7 @@ var PASSES = [
     tags: ["donkey", "mario", "yoshi", "harrypotter", "dinosaur", "minion", "jurassic"],
     description: "人気7アトラクションを厳選。両エリア入場確約付きで、主要アトラクションをしっかり押さえられます。",
     advice: "迷ったらコレ！コスパと満足度のバランスが一番良い定番チョイスです。",
+    timeDesignated: [],
     pricing: {
       "2026-03-01": 23800, "2026-03-02": 23800, "2026-03-03": 23800,
       "2026-03-04": 25800, "2026-03-05": 23800,
@@ -108,7 +110,7 @@ var PASSES = [
     color: "#27AE60",
     colorBg: "#E8F8EF",
     borderColor: "#27AE60",
-    minHeight: 132,
+    minHeight: 122,
     areaEntry: ["nintendo"],
     attractions: {
       fixed: [
@@ -122,6 +124,7 @@ var PASSES = [
     tags: ["donkey", "harrypotter", "minion", "hollywood"],
     description: "ドンキーコング＋ハリポタ＋ミニオンの人気3つに加え、ハリウッド・ドリームかジョーズを選べるパス。",
     advice: "絶叫系もミニオンも両方楽しみたい大人グループにおすすめ。",
+    timeDesignated: ["スーパー・ニンテンドー・ワールド入場", "ドンキーコングのクレイジー・トロッコ"],
     pricing: {
       "2026-03-01": 16800, "2026-03-04": 18800,
       "2026-03-07": 18800, "2026-03-08": 16800,
@@ -149,8 +152,8 @@ var PASSES = [
     color: "#27AE60",
     colorBg: "#E8F8EF",
     borderColor: "#27AE60",
-    minHeight: 0,
-    areaEntry: [],
+    minHeight: 122,
+    areaEntry: ["nintendo"],
     attractions: {
       fixed: [
         "ドンキーコングのクレイジー・トロッコ",
@@ -162,7 +165,8 @@ var PASSES = [
     },
     tags: ["donkey", "mario", "harrypotter", "dinosaur"],
     description: "ドンキーコング＋マリオカート＋ハリポタの鉄板3つ。フライングダイナソーかジョーズも選べます。",
-    advice: "エリア入場確約はないので、朝イチでニンテンドーエリアに向かうのがおすすめ。",
+    advice: "ニンテンドーエリア入場確約付き。ドンキーコング＋マリオカートの鉄板コンボです。",
+    timeDesignated: ["スーパー・ニンテンドー・ワールド入場", "マリオカート〜クッパの挑戦状〜", "ドンキーコングのクレイジー・トロッコ"],
     pricing: {
       "2026-03-02": 16800, "2026-03-04": 18800, "2026-03-05": 18800,
       "2026-03-07": 18800, "2026-03-08": 16800,
@@ -184,7 +188,7 @@ var PASSES = [
     color: "#27AE60",
     colorBg: "#E8F8EF",
     borderColor: "#27AE60",
-    minHeight: 132,
+    minHeight: 122,
     areaEntry: ["nintendo"],
     attractions: {
       fixed: [
@@ -197,6 +201,7 @@ var PASSES = [
     tags: ["donkey", "mario", "harrypotter", "dinosaur", "jurassic"],
     description: "ドンキーコング＋マリオカートに加え、ハリポタorダイナソー、ジョーズorジュラシックを選べる自由度の高いパス。",
     advice: "選択肢が多いので、事前に乗りたいものを決めておくとスムーズです。",
+    timeDesignated: ["スーパー・ニンテンドー・ワールド入場", "マリオカート〜クッパの挑戦状〜", "ドンキーコングのクレイジー・トロッコ"],
     pricing: {
       "2026-03-02": 16800, "2026-03-07": 18800, "2026-03-08": 16800,
       "2026-03-11": 18800, "2026-03-12": 18800,
@@ -233,6 +238,7 @@ var PASSES = [
     tags: ["mario", "harrypotter", "minion", "jurassic"],
     description: "マリオカート＋ハリポタ＋ミニオンの人気3つ。ジョーズかジュラシック・パークも選べます。",
     advice: "ニンテンドーエリア入場確約付き。子連れにも人気のバランス型パス。",
+    timeDesignated: ["スーパー・ニンテンドー・ワールド入場", "マリオカート〜クッパの挑戦状〜"],
     pricing: {
       "2026-03-02": 16800, "2026-03-03": 16800, "2026-03-04": 18800,
       "2026-03-05": 16800, "2026-03-08": 16800,
@@ -252,11 +258,11 @@ var PASSES = [
       "2026-04-15": 16800
     }
   },
-  // 7. エクスプレス・パス 4 4-D＆バックドロップ
+  // 7. エクスプレス・パス 4 フライング・ダイナソー＆4-D
   {
-    id: "ep4_4d_backdrop",
-    name: "エクスプレス・パス 4\n〜4-D＆バックドロップ〜",
-    shortName: "エクスプレス・パス 4 4-D＆バックドロップ",
+    id: "ep4_dino_4d",
+    name: "エクスプレス・パス 4\n〜フライング・ダイナソー＆4-D〜",
+    shortName: "エクスプレス・パス 4 フラダイ＆4-D",
     type: "ep4",
     color: "#27AE60",
     colorBg: "#E8F8EF",
@@ -265,16 +271,18 @@ var PASSES = [
     areaEntry: [],
     attractions: {
       fixed: [
-        "呪術廻戦・ザ・リアル 4-D",
+        "呪術廻戦・ザ・リアル 4-D ～廻る時計台～",
+        "ハリー・ポッター・アンド・ザ・フォービドゥン・ジャーニー",
         "フライト・オブ・ザ・ヒッポグリフ",
-        "ハリウッド・ドリーム〜バックドロップ〜"
+        "ザ・フライング・ダイナソー"
       ],
-      selectable1: ["ハリー・ポッター・アンド・ザ・フォービドゥン・ジャーニー", "ザ・フライング・ダイナソー"],
+      selectable1: [],
       selectable2: []
     },
-    tags: ["harrypotter", "dinosaur", "hollywood", "theater"],
-    description: "バックドロップ＋4-Dシアター＋ヒッポグリフ。ハリポタかダイナソーも選べる絶叫系パス。",
-    advice: "エリア入場確約なし。絶叫系メインで楽しみたい方向け。",
+    tags: ["harrypotter", "dinosaur", "theater"],
+    description: "ダイナソー＋ハリポタ＋ヒッポグリフ＋呪術4-D。全4つ固定で選択不要の絶叫系パス。",
+    advice: "エリア入場確約なし。ウィザーディング・ワールドは朝イチか夕方に行きましょう。",
+    timeDesignated: ["フライト・オブ・ザ・ヒッポグリフ", "呪術廻戦・ザ・リアル 4-D ～廻る時計台～"],
     pricing: {
       "2026-03-21": 17800, "2026-03-22": 17800, "2026-03-23": 19800,
       "2026-03-24": 17800, "2026-03-25": 21800, "2026-03-26": 19800,
@@ -297,8 +305,8 @@ var PASSES = [
     color: "#27AE60",
     colorBg: "#E8F8EF",
     borderColor: "#27AE60",
-    minHeight: 0,
-    areaEntry: [],
+    minHeight: 102,
+    areaEntry: ["nintendo"],
     attractions: {
       fixed: [
         "ミニオン・ハチャメチャ・ミッション",
@@ -310,8 +318,9 @@ var PASSES = [
       selectable2: []
     },
     tags: ["minion", "yoshi", "theater"],
-    description: "ミニオン2つ＋ヨッシー＋コナン4-D。身長制限なしで小さなお子さまも全部乗れます。",
-    advice: "絶叫系なし＆身長制限なし。小さなお子さま連れファミリーに最適！",
+    description: "ミニオン2つ＋ヨッシー＋コナン4-D。102cm以上でOK、小さなお子さまも楽しめます。",
+    advice: "絶叫系なし。102cm以上から全部乗れるので、小さなお子さま連れファミリーに最適！",
+    timeDesignated: ["スーパー・ニンテンドー・ワールド入場", "ヨッシー・アドベンチャー", "ミニオン・ハチャメチャ・ミッション"],
     pricing: {
       "2026-03-01": 12800, "2026-03-02": 12800, "2026-03-03": 12800,
       "2026-03-04": 14800, "2026-03-05": 12800, "2026-03-06": 12800,
@@ -335,11 +344,11 @@ var PASSES = [
     color: "#27AE60",
     colorBg: "#E8F8EF",
     borderColor: "#27AE60",
-    minHeight: 107,
+    minHeight: 102,
     areaEntry: [],
     attractions: {
       fixed: [
-        "呪術廻戦・ザ・リアル 4-D",
+        "呪術廻戦・ザ・リアル 4-D ～廻る時計台～",
         "ミニオン・ハチャメチャ・ミッション",
         "スペース・ファンタジー・ザ・ライド"
       ],
@@ -349,6 +358,7 @@ var PASSES = [
     tags: ["minion", "theater", "jurassic"],
     description: "スペース・ファンタジー＋ミニオン・ミッション＋4-D。ジョーズかジュラシックも選べます。",
     advice: "ニンテンドーエリアのアトラクションは含まれません。エリアには朝イチで行きましょう。",
+    timeDesignated: ["呪術廻戦・ザ・リアル 4-D ～廻る時計台～", "ミニオン・ハチャメチャ・ミッション"],
     pricing: {
       "2026-03-01": 11800, "2026-03-02": 11800, "2026-03-03": 11800,
       "2026-03-04": 13800, "2026-03-05": 11800, "2026-03-06": 11800,
@@ -379,11 +389,11 @@ var PASSES = [
     color: "#27AE60",
     colorBg: "#E8F8EF",
     borderColor: "#27AE60",
-    minHeight: 107,
+    minHeight: 102,
     areaEntry: [],
     attractions: {
       fixed: [
-        "呪術廻戦・ザ・リアル 4-D",
+        "呪術廻戦・ザ・リアル 4-D ～廻る時計台～",
         "スペース・ファンタジー・ザ・ライド"
       ],
       selectable1: ["ミニオン・ハチャメチャ・ライド", "名探偵コナン 4-D ライブ・ショー"],
@@ -392,6 +402,7 @@ var PASSES = [
     tags: ["minion", "theater", "jurassic"],
     description: "スペース・ファンタジー＋4-D。ミニオンかコナン、ジョーズかジュラシックを選べます。",
     advice: "選択肢が多く自由度が高い。お手頃価格で楽しみたい方に。",
+    timeDesignated: ["呪術廻戦・ザ・リアル 4-D ～廻る時計台～"],
     pricing: {
       "2026-03-01": 11800, "2026-03-02": 11800, "2026-03-03": 11800,
       "2026-03-04": 13800, "2026-03-05": 11800, "2026-03-06": 11800,
@@ -422,7 +433,7 @@ var PASSES = [
     color: "#27AE60",
     colorBg: "#E8F8EF",
     borderColor: "#27AE60",
-    minHeight: 132,
+    minHeight: 122,
     areaEntry: [],
     attractions: {
       fixed: [
@@ -435,6 +446,7 @@ var PASSES = [
     tags: ["harrypotter", "dinosaur", "jurassic"],
     description: "ハリポタエリア2つ＋ダイナソーorスペファン＋ジョーズorジュラシック。絶叫系＆冒険系パス。",
     advice: "ハリポタと絶叫系を両方楽しみたい方に。ニンテンドーエリアは朝イチで。",
+    timeDesignated: ["フライト・オブ・ザ・ヒッポグリフ"],
     pricing: {
       "2026-03-01": 11800, "2026-03-02": 11800, "2026-03-03": 11800,
       "2026-03-04": 13800, "2026-03-05": 11800, "2026-03-06": 11800,
@@ -480,6 +492,7 @@ var PASSES = [
     tags: ["mario", "yoshi", "harrypotter", "minion"],
     description: "マリオカート＋ヨッシー＋ハリポタ＋ミニオン。選択制なしの安心パス。",
     advice: "全て確定アトラクションで迷わない。ニンテンドーエリア入場確約付き！",
+    timeDesignated: ["スーパー・ニンテンドー・ワールド入場", "マリオカート〜クッパの挑戦状〜", "ヨッシー・アドベンチャー"],
     pricing: {
       "2026-03-02": 14800, "2026-03-03": 14800, "2026-03-04": 16800,
       "2026-03-05": 14800, "2026-03-07": 16800, "2026-03-08": 14800,
@@ -516,6 +529,7 @@ var PASSES = [
     tags: ["donkey", "yoshi", "minion", "jurassic"],
     description: "ドンキーコング＋ヨッシー＋ミニオン。ジョーズかジュラシックも選べます。",
     advice: "107cm以上から乗れるので、子連れでもドンキーコングを楽しめます！",
+    timeDesignated: ["スーパー・ニンテンドー・ワールド入場", "ヨッシー・アドベンチャー", "ドンキーコングのクレイジー・トロッコ"],
     pricing: {
       "2026-03-02": 16800, "2026-03-03": 16800, "2026-03-04": 18800,
       "2026-03-05": 16800, "2026-03-08": 16800,
@@ -558,6 +572,7 @@ var PASSES = [
     tags: ["yoshi", "minion", "theater"],
     description: "ヨッシー＋ミニオン2つ。ジョーズかコナン4-Dも選べる、小さなお子さま向けパス。",
     advice: "102cm以上でOK。小さなお子さまと一緒でも安心して楽しめます。",
+    timeDesignated: ["スーパー・ニンテンドー・ワールド入場", "ヨッシー・アドベンチャー", "ミニオン・ハチャメチャ・ミッション"],
     pricing: {
       "2026-04-01": 16800, "2026-04-02": 16800, "2026-04-03": 16800,
       "2026-04-04": 14800,
@@ -590,6 +605,7 @@ var PASSES = [
     tags: ["mario", "yoshi", "harrypotter", "minion", "theater"],
     description: "マリオカート＋ヨッシー＋ハリポタ。ミニオンかコナン4-Dも選べます。",
     advice: "ニンテンドーエリア入場確約付き。人気どころをバランスよく押さえたパス。",
+    timeDesignated: ["スーパー・ニンテンドー・ワールド入場", "マリオカート〜クッパの挑戦状〜", "ヨッシー・アドベンチャー"],
     pricing: {
       "2026-04-01": 18800, "2026-04-02": 18800, "2026-04-03": 18800,
       "2026-04-04": 16800,
@@ -621,6 +637,7 @@ var PASSES = [
     tags: ["mario", "hollywood", "harrypotter", "dinosaur"],
     description: "マリオカート＋バックドロップ＋スペファン。ハリポタかダイナソーも選べる絶叫系パス。",
     advice: "絶叫系を攻めたい方に。ニンテンドーエリア入場確約付き！",
+    timeDesignated: ["スーパー・ニンテンドー・ワールド入場", "マリオカート〜クッパの挑戦状〜"],
     pricing: {
       "2026-04-01": 18800, "2026-04-02": 18800, "2026-04-03": 18800,
       "2026-04-04": 16800,
