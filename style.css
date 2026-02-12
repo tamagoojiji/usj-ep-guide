@@ -578,6 +578,13 @@ body {
   color: #5E35B1;
 }
 
+.area-note {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #888;
+  line-height: 1.5;
+}
+
 /* === 他の候補セクション === */
 .other-results-heading {
   font-size: 14px;

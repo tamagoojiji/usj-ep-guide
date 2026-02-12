@@ -432,6 +432,8 @@
       return '<div class="info-section"><h4 class="info-title">エリア入場確約</h4><p class="info-text">なし（通常の整理券 or 朝イチ入場で対応）</p></div>';
     }
 
+    var hasHarryPotter = pass.areaEntry.indexOf("harrypotter") !== -1;
+
     var html = '<div class="info-section"><h4 class="info-title">エリア入場確約</h4><div>';
     pass.areaEntry.forEach(function (area) {
       if (area === "nintendo") {
@@ -440,7 +442,11 @@
         html += '<span class="area-badge harrypotter">ウィザーディング・ワールド</span>';
       }
     });
-    html += '</div></div>';
+    html += '</div>';
+    if (hasHarryPotter) {
+      html += '<p class="area-note">※現在ウィザーディング・ワールド・オブ・ハリー・ポッターの入場規制は行われていません</p>';
+    }
+    html += '</div>';
     return html;
   }
 
