@@ -1,40 +1,358 @@
 (function () {
   "use strict";
 
-  // === 状態管理 ===
-  var selectedDate = null;       // "2026-03-15" 形式
-  var selectedHeight = 0;        // cm数値（0=制限なし扱い）
-  var selectedTags = [];         // ["donkey", "mario", ...]
-  var selectedBudget = null;     // "time" | "balance" | "save"
-  var currentMonth = 3;          // 表示中の月
+  // === LIFF設定 ===
+  var LIFF_ID = "2009119735-SCsuXNEA";
+  var GAS_URL = ""; // GASデプロイ後に設定
+
+  // === ユーザー情報 ===
+  var lineUid = null;
+  var lineDisplayName = null;
+  var userRegistered = false;
+
+  // === 診断状態管理 ===
+  var selectedDate = null;
+  var selectedHeight = 0;
+  var selectedTags = [];
+  var selectedBudget = null;
+  var currentMonth = 3;
   var isTransitioning = false;
 
   // === 画面ID ===
-  var screenIds = ["screen-top", "screen-date", "screen-height", "screen-attractions", "screen-budget", "screen-result", "screen-expired"];
+  var screenIds = [
+    "screen-loading", "screen-liff-error", "screen-register",
+    "screen-top", "screen-date", "screen-height",
+    "screen-attractions", "screen-budget", "screen-result",
+    "screen-history", "screen-expired"
+  ];
 
   // === 画面遷移 ===
   function showScreen(id) {
     screenIds.forEach(function (sid) {
-      document.getElementById(sid).classList.add("hidden");
+      var el = document.getElementById(sid);
+      if (el) el.classList.add("hidden");
     });
     document.getElementById(id).classList.remove("hidden");
     window.scrollTo(0, 0);
   }
 
-  // === 販売日チェック: その日にパスが1つでもあるか ===
+  // ============================================================
+  //  LIFF初期化
+  // ============================================================
+  function initLiff() {
+    liff.init({ liffId: LIFF_ID }).then(function () {
+      if (!liff.isLoggedIn()) {
+        liff.login();
+        return;
+      }
+      return liff.getProfile();
+    }).then(function (profile) {
+      if (!profile) return;
+      lineUid = profile.userId;
+      lineDisplayName = profile.displayName;
+
+      // 期限切れチェック
+      if (isExpired()) {
+        showScreen("screen-expired");
+        return;
+      }
+
+      // ユーザー登録チェック
+      checkUserRegistration();
+    }).catch(function (err) {
+      console.error("LIFF init error:", err);
+      showScreen("screen-liff-error");
+    });
+  }
+
+  // ============================================================
+  //  ユーザー登録チェック（GAS）
+  // ============================================================
+  function checkUserRegistration() {
+    if (!GAS_URL) {
+      // GAS未設定時はローカルストレージで代用
+      var saved = localStorage.getItem("ep_user_" + lineUid);
+      if (saved) {
+        userRegistered = true;
+        showTopScreen();
+      } else {
+        showRegisterScreen();
+      }
+      return;
+    }
+
+    fetch(GAS_URL + "?action=checkUser&uid=" + encodeURIComponent(lineUid))
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (data.registered) {
+          userRegistered = true;
+          showTopScreen();
+        } else {
+          showRegisterScreen();
+        }
+      })
+      .catch(function () {
+        // GASエラー時はローカルストレージで代用
+        var saved = localStorage.getItem("ep_user_" + lineUid);
+        if (saved) {
+          userRegistered = true;
+          showTopScreen();
+        } else {
+          showRegisterScreen();
+        }
+      });
+  }
+
+  // ============================================================
+  //  登録画面
+  // ============================================================
+  function showRegisterScreen() {
+    showScreen("screen-register");
+
+    // ウェルカムメッセージ
+    var welcomeEl = document.getElementById("register-welcome");
+    if (lineDisplayName) {
+      welcomeEl.textContent = lineDisplayName + "さん、ようこそ！";
+    }
+
+    // 生年月日プルダウン生成
+    var yearSelect = document.getElementById("reg-year");
+    var monthSelect = document.getElementById("reg-month");
+    var daySelect = document.getElementById("reg-day");
+
+    if (yearSelect.options.length <= 1) {
+      var currentYear = new Date().getFullYear();
+      for (var y = currentYear; y >= 1930; y--) {
+        var opt = document.createElement("option");
+        opt.value = y;
+        opt.textContent = y + "年";
+        yearSelect.appendChild(opt);
+      }
+      for (var m = 1; m <= 12; m++) {
+        var opt2 = document.createElement("option");
+        opt2.value = m;
+        opt2.textContent = m + "月";
+        monthSelect.appendChild(opt2);
+      }
+      for (var d = 1; d <= 31; d++) {
+        var opt3 = document.createElement("option");
+        opt3.value = d;
+        opt3.textContent = d + "日";
+        daySelect.appendChild(opt3);
+      }
+    }
+
+    // 性別ボタン
+    var selectedGender = null;
+    var genderBtns = document.querySelectorAll(".gender-btn");
+    genderBtns.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        genderBtns.forEach(function (b) { b.classList.remove("selected"); });
+        btn.classList.add("selected");
+        selectedGender = btn.getAttribute("data-gender");
+        updateRegisterBtn();
+      });
+    });
+
+    // バリデーション
+    var registerBtn = document.getElementById("register-btn");
+    var privacyCheckbox = document.getElementById("privacy-checkbox");
+
+    function updateRegisterBtn() {
+      var valid = yearSelect.value && monthSelect.value && daySelect.value
+        && selectedGender && privacyCheckbox.checked;
+      registerBtn.disabled = !valid;
+    }
+
+    yearSelect.addEventListener("change", updateRegisterBtn);
+    monthSelect.addEventListener("change", updateRegisterBtn);
+    daySelect.addEventListener("change", updateRegisterBtn);
+    privacyCheckbox.addEventListener("change", updateRegisterBtn);
+
+    // 登録ボタン
+    registerBtn.addEventListener("click", function () {
+      if (registerBtn.disabled) return;
+
+      var birthday = yearSelect.value + "-" +
+        String(monthSelect.value).padStart(2, "0") + "-" +
+        String(daySelect.value).padStart(2, "0");
+
+      var userData = {
+        uid: lineUid,
+        name: lineDisplayName,
+        birthday: birthday,
+        gender: selectedGender,
+        registeredAt: new Date().toISOString()
+      };
+
+      // ローカル保存（GASの有無に関わらず）
+      localStorage.setItem("ep_user_" + lineUid, JSON.stringify(userData));
+      userRegistered = true;
+
+      // GASに送信
+      if (GAS_URL) {
+        fetch(GAS_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "registerUser", data: userData })
+        }).catch(function (err) {
+          console.error("GAS register error:", err);
+        });
+      }
+
+      showTopScreen();
+    });
+
+    // プライバシーポリシーリンク
+    var privacyLinkReg = document.getElementById("privacy-link-reg");
+    if (privacyLinkReg) {
+      privacyLinkReg.addEventListener("click", function (e) {
+        e.preventDefault();
+        document.getElementById("privacy-modal").classList.remove("hidden");
+      });
+    }
+  }
+
+  // ============================================================
+  //  プライバシーポリシーモーダル
+  // ============================================================
+  function initPrivacyModal() {
+    var modal = document.getElementById("privacy-modal");
+    var closeBtn = document.getElementById("modal-close");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", function () {
+        modal.classList.add("hidden");
+      });
+    }
+    if (modal) {
+      modal.addEventListener("click", function (e) {
+        if (e.target === modal) modal.classList.add("hidden");
+      });
+    }
+  }
+
+  // ============================================================
+  //  トップ画面表示
+  // ============================================================
+  function showTopScreen() {
+    showScreen("screen-top");
+
+    // 登録済みなら履歴ボタン表示
+    var historyBtn = document.getElementById("history-btn");
+    if (userRegistered && historyBtn) {
+      historyBtn.classList.remove("hidden");
+    }
+  }
+
+  // ============================================================
+  //  診断結果をGASに保存
+  // ============================================================
+  function saveDiagnosisResult(result) {
+    var logData = {
+      uid: lineUid,
+      name: lineDisplayName,
+      date: selectedDate,
+      height: selectedHeight,
+      tags: selectedTags.join(","),
+      budget: selectedBudget,
+      resultPassId: result.main ? result.main.pass.id : "",
+      resultPassName: result.main ? result.main.pass.shortName : "",
+      resultPrice: result.main ? result.main.price : 0,
+      diagnosedAt: new Date().toISOString()
+    };
+
+    // ローカル保存
+    var historyKey = "ep_history_" + lineUid;
+    var history = JSON.parse(localStorage.getItem(historyKey) || "[]");
+    history.unshift(logData);
+    if (history.length > 20) history = history.slice(0, 20);
+    localStorage.setItem(historyKey, JSON.stringify(history));
+
+    // GASに送信
+    if (GAS_URL) {
+      fetch(GAS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "saveDiagnosis", data: logData })
+      }).catch(function (err) {
+        console.error("GAS save error:", err);
+      });
+    }
+  }
+
+  // ============================================================
+  //  履歴表示
+  // ============================================================
+  function showHistory() {
+    showScreen("screen-history");
+    var listEl = document.getElementById("history-list");
+
+    var historyKey = "ep_history_" + lineUid;
+    var history = JSON.parse(localStorage.getItem(historyKey) || "[]");
+
+    if (history.length === 0) {
+      listEl.innerHTML =
+        '<div class="no-result">' +
+          '<p class="no-result-text">まだ診断履歴がありません</p>' +
+          '<p class="no-result-sub">診断を受けると、ここに結果が保存されます。</p>' +
+        '</div>';
+      return;
+    }
+
+    var html = "";
+    history.forEach(function (item) {
+      var d = new Date(item.diagnosedAt);
+      var dateStr = d.getFullYear() + "/" + (d.getMonth() + 1) + "/" + d.getDate();
+      var timeStr = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+
+      var heightLabel = getHeightLabel(item.height);
+      var tagsLabel = item.tags.split(",").map(function (t) {
+        return ATTRACTION_TAGS[t] || t;
+      }).join("、");
+      var budgetLabel = item.budget === "time" ? "お金より時間" :
+        item.budget === "balance" ? "コスパよく" : "節約";
+
+      html += '<div class="history-card">';
+      html += '<div class="history-date">' + dateStr + ' ' + timeStr + '</div>';
+      html += '<div class="history-result">' + (item.resultPassName || "該当なし") + '</div>';
+      if (item.resultPrice) {
+        html += '<div class="history-price">¥' + Number(item.resultPrice).toLocaleString() + '</div>';
+      }
+      html += '<div class="history-details">';
+      html += '<span>訪問日: ' + item.date + '</span>';
+      html += '<span>身長: ' + heightLabel + '</span>';
+      html += '<span>予算: ' + budgetLabel + '</span>';
+      html += '</div>';
+      html += '</div>';
+    });
+
+    listEl.innerHTML = html;
+  }
+
+  function getHeightLabel(height) {
+    if (height >= 132) return "132cm以上";
+    if (height >= 122) return "122〜132cm";
+    if (height >= 107) return "107〜122cm";
+    if (height >= 102) return "102〜107cm";
+    if (height >= 92) return "92〜102cm";
+    return "92cm未満";
+  }
+
+  // ============================================================
+  //  カレンダー・選択肢（既存ロジック）
+  // ============================================================
+
   function hasAnyPassOnDate(dateStr) {
     return PASSES.some(function (p) {
       return p.pricing[dateStr] !== undefined;
     });
   }
 
-  // === カレンダー描画 ===
   function renderCalendar(month) {
     currentMonth = month;
     var container = document.getElementById("calendar-container");
     var year = 2026;
 
-    // 曜日ヘッダー
     var weekdays = ["日", "月", "火", "水", "木", "金", "土"];
     var html = '<div class="calendar-header">';
     weekdays.forEach(function (wd, i) {
@@ -45,18 +363,15 @@
     });
     html += '</div>';
 
-    // グリッド
     html += '<div class="calendar-grid">';
 
     var firstDay = new Date(year, month - 1, 1).getDay();
     var daysInMonth = new Date(year, month, 0).getDate();
 
-    // 空セル
     for (var e = 0; e < firstDay; e++) {
       html += '<div class="calendar-cell empty"></div>';
     }
 
-    // 日付セル
     var today = new Date();
     var todayStr = today.getFullYear() + "-" +
       String(today.getMonth() + 1).padStart(2, "0") + "-" +
@@ -80,7 +395,6 @@
     html += '</div>';
     container.innerHTML = html;
 
-    // タブの active 状態
     var tabs = document.querySelectorAll(".month-tab");
     tabs.forEach(function (tab) {
       tab.classList.remove("active");
@@ -89,18 +403,15 @@
       }
     });
 
-    // セルのクリックイベント
     var cells = container.querySelectorAll(".calendar-cell:not(.disabled):not(.empty)");
     cells.forEach(function (cell) {
       cell.addEventListener("click", function () {
         if (isTransitioning) return;
-        // 選択状態を更新
         var allCells = container.querySelectorAll(".calendar-cell");
         allCells.forEach(function (c) { c.classList.remove("selected"); });
         cell.classList.add("selected");
         selectedDate = cell.getAttribute("data-date");
 
-        // 0.4秒後に自動遷移
         isTransitioning = true;
         setTimeout(function () {
           isTransitioning = false;
@@ -169,18 +480,15 @@
         var tag = choice.tag;
 
         if (tag === "any") {
-          // 「こだわりなし」選択時は他を全解除
           var allCards = container.querySelectorAll(".card-choice");
           allCards.forEach(function (c) { c.classList.remove("selected"); });
           card.classList.add("selected");
           selectedTags = ["any"];
         } else {
-          // 「こだわりなし」を解除
           var anyCard = container.querySelector('[data-tag="any"]');
           if (anyCard) anyCard.classList.remove("selected");
           selectedTags = selectedTags.filter(function (t) { return t !== "any"; });
 
-          // トグル
           var pos = selectedTags.indexOf(tag);
           if (pos === -1) {
             selectedTags.push(tag);
@@ -240,7 +548,9 @@
     return card;
   }
 
-  // === 結果表示 ===
+  // ============================================================
+  //  結果表示
+  // ============================================================
   function showResult() {
     var result = calculateResult(selectedDate, selectedHeight, selectedTags, selectedBudget);
     showScreen("screen-result");
@@ -291,6 +601,9 @@
         planningCta.classList.remove("highlight");
       }
     }
+
+    // 診断結果をGASに保存
+    saveDiagnosisResult(result);
   }
 
   // === 結果カードHTML生成 ===
@@ -305,25 +618,16 @@
     }
     html += '>';
 
-    // バッジ
     html += '<div class="result-card-badge" style="background:' + p.color + '">' + p.shortName + '</div>';
-
-    // パス名
     html += '<h3 class="result-card-name">' + p.name + '</h3>';
-
-    // 価格
     html += '<p class="result-card-price" style="color:' + p.color + '">¥' + price.toLocaleString() + '</p>';
-
-    // 説明
     html += '<p class="result-card-desc">' + p.description + '</p>';
 
-    // アトラクション（メインカードのみ詳細表示）
     if (isMain) {
       html += buildAttractionsSection(p);
       html += buildAreaSection(p);
       html += buildAdviceSection(p);
     } else {
-      // サブカードは簡易アトラクション表示
       html += buildSimpleAttractions(p);
     }
 
@@ -339,7 +643,7 @@
     });
   }
 
-  // === アトラクションタグHTML生成（時間指定・マッチ対応） ===
+  // === アトラクションタグHTML生成 ===
   function buildAttractionTag(pass, name) {
     var matched = isAttractionMatched(name);
     var timed = isTimeDesignated(pass, name);
@@ -355,7 +659,6 @@
     var html = '<div class="info-section">';
     html += '<h4 class="info-title">含まれるアトラクション</h4>';
 
-    // 時間指定の凡例
     if (pass.timeDesignated && pass.timeDesignated.length > 0) {
       html += '<div class="td-legend">';
       html += '<span class="td-legend-item"><span class="td-icon">🕐</span> = 体験時間が指定されます</span>';
@@ -366,7 +669,6 @@
       html += '</div>';
     }
 
-    // エリア入場（時間指定の場合）
     if (pass.timeDesignated && pass.timeDesignated.indexOf("スーパー・ニンテンドー・ワールド入場") !== -1) {
       html += '<ul class="attractions-list">';
       html += '<li class="attraction-tag time-designated area-entry-tag"><span class="td-icon">🕐</span>スーパー・ニンテンドー・ワールド入場</li>';
@@ -379,7 +681,6 @@
     });
     html += '</ul>';
 
-    // 選択制1
     if (pass.attractions.selectable1.length > 0) {
       html += '<p class="selectable-label">△1 以下から1つ選べます</p>';
       html += '<ul class="attractions-list">';
@@ -389,7 +690,6 @@
       html += '</ul>';
     }
 
-    // 選択制2
     if (pass.attractions.selectable2.length > 0) {
       html += '<p class="selectable-label">△2 以下から1つ選べます</p>';
       html += '<ul class="attractions-list">';
@@ -488,18 +788,18 @@
   // === 期限切れチェック ===
   function isExpired() {
     var now = new Date();
-    var expiry = new Date(2026, 3, 16); // 2026年4月16日（月は0始まり）
+    var expiry = new Date(2026, 3, 16);
     return now >= expiry;
   }
 
-  // === 初期化 ===
+  // ============================================================
+  //  初期化
+  // ============================================================
   function init() {
-    // 期限切れの場合はトップ画面を非表示にして期限切れ画面を表示
-    if (isExpired()) {
-      document.getElementById("screen-top").classList.add("hidden");
-      document.getElementById("screen-expired").classList.remove("hidden");
-      return;
-    }
+    initPrivacyModal();
+
+    // LIFF初期化
+    initLiff();
 
     // スタートボタン
     document.getElementById("start-btn").addEventListener("click", function () {
@@ -535,6 +835,16 @@
       renderHeightChoices();
       renderAttractionChoices();
       renderBudgetChoices();
+    });
+
+    // 履歴ボタン
+    document.getElementById("history-btn").addEventListener("click", function () {
+      showHistory();
+    });
+
+    // 履歴→トップに戻る
+    document.getElementById("history-back-btn").addEventListener("click", function () {
+      showTopScreen();
     });
   }
 
