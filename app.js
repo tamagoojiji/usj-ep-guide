@@ -260,8 +260,18 @@
       return;
     }
 
+    // 身長警告
+    var warningHtml = "";
+    if (result.heightWarning) {
+      warningHtml =
+        '<div class="height-warning">' +
+          '<p>⚠️ お子さまの身長では一部のアトラクションに身長制限があります。' +
+          '各アトラクションの利用制限は公式サイトでご確認ください。</p>' +
+        '</div>';
+    }
+
     // メインカード
-    mainContainer.innerHTML = buildResultCard(result.main, true);
+    mainContainer.innerHTML = warningHtml + buildResultCard(result.main, true);
 
     // 他の候補
     if (result.others.length > 0) {

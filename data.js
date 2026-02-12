@@ -657,16 +657,20 @@ function calculateResult(date, height, attractionTags, budget) {
   });
 
   if (available.length === 0) {
-    return { main: null, others: [] };
+    return { main: null, others: [], heightWarning: false };
   }
 
-  // Step 2: 身長フィルタ
-  available = available.filter(function (p) {
+  // Step 2: 身長フィルタ（ソフトフィルタ）
+  var heightWarning = false;
+  var heightFiltered = available.filter(function (p) {
     return height >= p.minHeight;
   });
 
-  if (available.length === 0) {
-    return { main: null, others: [] };
+  if (heightFiltered.length === 0) {
+    // 身長で全パスが除外される場合 → フィルタ解除して警告フラグ
+    heightWarning = true;
+  } else {
+    available = heightFiltered;
   }
 
   // Step 3: アトラクションマッチスコア
@@ -754,6 +758,7 @@ function calculateResult(date, height, attractionTags, budget) {
   // 上位3件を返す
   return {
     main: scored[0] || null,
-    others: scored.slice(1, 3)
+    others: scored.slice(1, 3),
+    heightWarning: heightWarning
   };
 }
