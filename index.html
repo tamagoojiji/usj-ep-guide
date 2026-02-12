@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>エクスプレスパス診断 | USJ攻略</title>
+  <meta name="description" content="5つの質問に答えるだけで、あなたにピッタリのUSJエクスプレスパスがわかる診断クイズ！">
+  <meta property="og:title" content="あなたにピッタリのエクスプレスパスは？">
+  <meta property="og:description" content="5つの質問に答えるだけで最適なエクスプレスパスがわかる！">
+  <meta property="og:type" content="website">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- トップ画面 -->
+  <div id="top-screen" class="screen">
+    <div class="container">
+      <img src="images/header.png" alt="USJ攻略" class="header-image">
+      <div class="top-content">
+        <img src="images/character.png" alt="たまご" class="character-image">
+        <h1 class="top-title">あなたにピッタリの<br>エクスプレスパスは？</h1>
+        <p class="top-description">5つの質問に答えるだけで<br>最適なパスがわかります</p>
+        <button id="start-btn" class="btn btn-primary btn-large">診断スタート</button>
+      </div>
+      <img src="images/footer.png" alt="たまご" class="footer-image">
+    </div>
+  </div>
+
+  <!-- 質問画面 -->
+  <div id="quiz-screen" class="screen hidden">
+    <div class="container">
+      <div class="quiz-header">
+        <div class="progress-info">
+          <span id="question-number">1</span> / <span id="total-questions">5</span>
+        </div>
+        <div class="progress-bar">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+      </div>
+
+      <div class="quiz-body">
+        <p id="question-text" class="question-text"></p>
+        <p id="question-note" class="question-note hidden"></p>
+        <div id="choices-container" class="choices-container"></div>
+        <button id="next-btn" class="btn btn-primary btn-large hidden">次へ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 結果画面 -->
+  <div id="result-screen" class="screen hidden">
+    <div class="container">
+      <img src="images/header.png" alt="USJ攻略" class="header-image">
+      <div class="result-content">
+        <h2 class="result-heading">あなたへのおすすめ</h2>
+
+        <!-- おすすめパスカード -->
+        <div id="result-card" class="result-card">
+          <div class="result-card-badge" id="result-badge"></div>
+          <h3 class="result-card-name" id="result-name"></h3>
+          <p class="result-card-price" id="result-price"></p>
+          <p class="result-card-desc" id="result-desc"></p>
+        </div>
+
+        <!-- 含まれるアトラクション -->
+        <div id="attractions-section" class="info-section">
+          <h4 class="info-title">含まれるアトラクション</h4>
+          <ul id="attractions-list" class="attractions-list"></ul>
+        </div>
+
+        <!-- エリア入場確約 -->
+        <div id="area-section" class="info-section">
+          <h4 class="info-title">エリア入場確約</h4>
+          <p id="area-text" class="info-text"></p>
+        </div>
+
+        <!-- ワンポイントアドバイス -->
+        <div class="info-section advice-section">
+          <h4 class="info-title">ワンポイントアドバイス</h4>
+          <p id="advice-text" class="info-text"></p>
+        </div>
+
+        <!-- アクション -->
+        <div class="result-actions">
+          <button id="retry-btn" class="btn btn-primary btn-large">もう一度やる</button>
+          <a href="https://www.usj.co.jp/web/ja/jp/tickets/express-pass" target="_blank" rel="noopener" class="btn btn-secondary btn-large">公式サイトで詳細を見る</a>
+        </div>
+
+        <p class="disclaimer">※価格・内容は変更になる場合があります。最新情報は公式サイトでご確認ください。<br>※本サービスはUSJ公式ではありません。</p>
+      </div>
+      <img src="images/footer.png" alt="たまご" class="footer-image">
+    </div>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
