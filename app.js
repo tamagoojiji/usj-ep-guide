@@ -1,243 +1,467 @@
 (function () {
   "use strict";
 
-  // 状態管理
-  var currentQuestionIndex = 0;
-  var answers = []; // 各質問の回答（シングル: choiceオブジェクト, マルチ: choiceオブジェクト配列）
-  var multiSelected = []; // Q4用の選択中インデックス
-  var isTransitioning = false; // シングル選択の自動遷移中フラグ
+  // === 状態管理 ===
+  var selectedDate = null;       // "2026-03-15" 形式
+  var selectedHeight = 0;        // cm数値（0=制限なし扱い）
+  var selectedTags = [];         // ["donkey", "mario", ...]
+  var selectedBudget = null;     // "time" | "balance" | "save"
+  var currentMonth = 3;          // 表示中の月
+  var isTransitioning = false;
 
-  // DOM要素
-  var screens = {
-    top: document.getElementById("top-screen"),
-    quiz: document.getElementById("quiz-screen"),
-    result: document.getElementById("result-screen")
-  };
+  // === 画面ID ===
+  var screenIds = ["screen-top", "screen-date", "screen-height", "screen-attractions", "screen-budget", "screen-result"];
 
   // === 画面遷移 ===
-  function showScreen(name) {
-    Object.keys(screens).forEach(function (key) {
-      screens[key].classList.add("hidden");
+  function showScreen(id) {
+    screenIds.forEach(function (sid) {
+      document.getElementById(sid).classList.add("hidden");
     });
-    screens[name].classList.remove("hidden");
+    document.getElementById(id).classList.remove("hidden");
     window.scrollTo(0, 0);
   }
 
-  // === プログレスバー更新 ===
-  function updateProgress() {
-    var num = currentQuestionIndex + 1;
-    var total = QUESTIONS.length;
-    document.getElementById("question-number").textContent = num;
-    document.getElementById("total-questions").textContent = total;
-    document.getElementById("progress-fill").style.width = (num / total * 100) + "%";
+  // === 販売日チェック: その日にパスが1つでもあるか ===
+  function hasAnyPassOnDate(dateStr) {
+    return PASSES.some(function (p) {
+      return p.pricing[dateStr] !== undefined;
+    });
+  }
+
+  // === カレンダー描画 ===
+  function renderCalendar(month) {
+    currentMonth = month;
+    var container = document.getElementById("calendar-container");
+    var year = 2026;
+
+    // 曜日ヘッダー
+    var weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+    var html = '<div class="calendar-header">';
+    weekdays.forEach(function (wd, i) {
+      var cls = "calendar-weekday";
+      if (i === 0) cls += " sun";
+      if (i === 6) cls += " sat";
+      html += '<div class="' + cls + '">' + wd + '</div>';
+    });
+    html += '</div>';
+
+    // グリッド
+    html += '<div class="calendar-grid">';
+
+    var firstDay = new Date(year, month - 1, 1).getDay();
+    var daysInMonth = new Date(year, month, 0).getDate();
+
+    // 空セル
+    for (var e = 0; e < firstDay; e++) {
+      html += '<div class="calendar-cell empty"></div>';
+    }
+
+    // 日付セル
+    var today = new Date();
+    var todayStr = today.getFullYear() + "-" +
+      String(today.getMonth() + 1).padStart(2, "0") + "-" +
+      String(today.getDate()).padStart(2, "0");
+
+    for (var d = 1; d <= daysInMonth; d++) {
+      var dateStr = year + "-" + String(month).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+      var dayOfWeek = new Date(year, month - 1, d).getDay();
+      var available = hasAnyPassOnDate(dateStr);
+
+      var cls = "calendar-cell";
+      if (!available) cls += " disabled";
+      if (dayOfWeek === 0) cls += " sun";
+      if (dayOfWeek === 6) cls += " sat";
+      if (dateStr === todayStr) cls += " today";
+      if (dateStr === selectedDate) cls += " selected";
+
+      html += '<div class="' + cls + '" data-date="' + dateStr + '">' + d + '</div>';
+    }
+
+    html += '</div>';
+    container.innerHTML = html;
+
+    // タブの active 状態
+    var tabs = document.querySelectorAll(".month-tab");
+    tabs.forEach(function (tab) {
+      tab.classList.remove("active");
+      if (parseInt(tab.getAttribute("data-month")) === month) {
+        tab.classList.add("active");
+      }
+    });
+
+    // セルのクリックイベント
+    var cells = container.querySelectorAll(".calendar-cell:not(.disabled):not(.empty)");
+    cells.forEach(function (cell) {
+      cell.addEventListener("click", function () {
+        if (isTransitioning) return;
+        // 選択状態を更新
+        var allCells = container.querySelectorAll(".calendar-cell");
+        allCells.forEach(function (c) { c.classList.remove("selected"); });
+        cell.classList.add("selected");
+        selectedDate = cell.getAttribute("data-date");
+
+        // 0.4秒後に自動遷移
+        isTransitioning = true;
+        setTimeout(function () {
+          isTransitioning = false;
+          showScreen("screen-height");
+        }, 400);
+      });
+    });
+  }
+
+  // === 身長選択肢 ===
+  var heightChoices = [
+    { emoji: "👶", title: "92cm未満", sub: "ベビーカーの赤ちゃんと", value: 0 },
+    { emoji: "🧒", title: "92〜102cm未満", sub: "小さなお子さまと", value: 92 },
+    { emoji: "👦", title: "102〜107cm未満", sub: "", value: 102 },
+    { emoji: "🧑", title: "107〜122cm未満", sub: "", value: 107 },
+    { emoji: "💪", title: "122〜132cm未満", sub: "", value: 122 },
+    { emoji: "🎢", title: "132cm以上 / 大人だけ", sub: "全アトラクションOK", value: 132 }
+  ];
+
+  function renderHeightChoices() {
+    var container = document.getElementById("height-choices");
+    container.innerHTML = "";
+    heightChoices.forEach(function (choice) {
+      var card = createCard(choice.emoji, choice.title, choice.sub);
+      card.addEventListener("click", function () {
+        if (isTransitioning) return;
+        var cards = container.querySelectorAll(".card-choice");
+        cards.forEach(function (c) { c.classList.remove("selected"); });
+        card.classList.add("selected");
+        card.classList.add("just-selected");
+        selectedHeight = choice.value;
+
+        isTransitioning = true;
+        setTimeout(function () {
+          isTransitioning = false;
+          showScreen("screen-attractions");
+        }, 400);
+      });
+      container.appendChild(card);
+    });
+  }
+
+  // === アトラクション選択肢 ===
+  var attractionChoices = [
+    { emoji: "🦍", title: "ドンキーコング・トロッコ", sub: "ニンテンドーエリア", tag: "donkey" },
+    { emoji: "🏎️", title: "マリオカート", sub: "ニンテンドーエリア", tag: "mario" },
+    { emoji: "🟢", title: "ヨッシー・アドベンチャー", sub: "ニンテンドーエリア", tag: "yoshi" },
+    { emoji: "🧙", title: "ハリー・ポッター", sub: "ウィザーディング・ワールド", tag: "harrypotter" },
+    { emoji: "🦖", title: "フライングダイナソー", sub: "絶叫系", tag: "dinosaur" },
+    { emoji: "🎢", title: "ハリウッド・ドリーム", sub: "バックドロップ含む", tag: "hollywood" },
+    { emoji: "🍌", title: "ミニオン系", sub: "ミニオン・パーク", tag: "minion" },
+    { emoji: "🌊", title: "ジュラシック・パーク・ザ・ライド", sub: "", tag: "jurassic" },
+    { emoji: "🎬", title: "シアター系（4-Dなど）", sub: "", tag: "theater" },
+    { emoji: "❓", title: "特にこだわりなし", sub: "", tag: "any" }
+  ];
+
+  function renderAttractionChoices() {
+    var container = document.getElementById("attraction-choices");
+    container.innerHTML = "";
+    selectedTags = [];
+
+    attractionChoices.forEach(function (choice) {
+      var card = createCard(choice.emoji, choice.title, choice.sub);
+      card.setAttribute("data-tag", choice.tag);
+      card.addEventListener("click", function () {
+        var tag = choice.tag;
+
+        if (tag === "any") {
+          // 「こだわりなし」選択時は他を全解除
+          var allCards = container.querySelectorAll(".card-choice");
+          allCards.forEach(function (c) { c.classList.remove("selected"); });
+          card.classList.add("selected");
+          selectedTags = ["any"];
+        } else {
+          // 「こだわりなし」を解除
+          var anyCard = container.querySelector('[data-tag="any"]');
+          if (anyCard) anyCard.classList.remove("selected");
+          selectedTags = selectedTags.filter(function (t) { return t !== "any"; });
+
+          // トグル
+          var pos = selectedTags.indexOf(tag);
+          if (pos === -1) {
+            selectedTags.push(tag);
+            card.classList.add("selected");
+          } else {
+            selectedTags.splice(pos, 1);
+            card.classList.remove("selected");
+          }
+        }
+      });
+      container.appendChild(card);
+    });
+  }
+
+  // === 予算選択肢 ===
+  var budgetChoices = [
+    { emoji: "💎", title: "お金より時間！", sub: "全力で楽しみたい", value: "time" },
+    { emoji: "⚖️", title: "コスパよく", sub: "バランス重視", value: "balance" },
+    { emoji: "🪙", title: "できるだけ節約", sub: "安いほどうれしい", value: "save" }
+  ];
+
+  function renderBudgetChoices() {
+    var container = document.getElementById("budget-choices");
+    container.innerHTML = "";
+    budgetChoices.forEach(function (choice) {
+      var card = createCard(choice.emoji, choice.title, choice.sub);
+      card.addEventListener("click", function () {
+        if (isTransitioning) return;
+        var cards = container.querySelectorAll(".card-choice");
+        cards.forEach(function (c) { c.classList.remove("selected"); });
+        card.classList.add("selected");
+        card.classList.add("just-selected");
+        selectedBudget = choice.value;
+
+        isTransitioning = true;
+        setTimeout(function () {
+          isTransitioning = false;
+          showResult();
+        }, 400);
+      });
+      container.appendChild(card);
+    });
   }
 
   // === カード要素を生成 ===
-  function createCard(choice, index, isMulti) {
+  function createCard(emoji, title, sub) {
     var card = document.createElement("button");
     card.className = "card-choice";
     card.setAttribute("type", "button");
-
     card.innerHTML =
-      '<span class="card-emoji">' + choice.emoji + '</span>' +
+      '<span class="card-emoji">' + emoji + '</span>' +
       '<div class="card-text">' +
-        '<div class="card-title">' + choice.title + '</div>' +
-        '<div class="card-sub">' + choice.sub + '</div>' +
+        '<div class="card-title">' + title + '</div>' +
+        (sub ? '<div class="card-sub">' + sub + '</div>' : '') +
       '</div>' +
       '<div class="card-check"><span class="card-check-icon">&#10003;</span></div>';
-
-    if (isMulti) {
-      card.addEventListener("click", function () {
-        handleMultiSelect(index, card);
-      });
-    } else {
-      card.addEventListener("click", function () {
-        handleSingleSelect(index, card);
-      });
-    }
-
     return card;
   }
 
-  // === 質問を描画 ===
-  function renderQuestion() {
-    var q = QUESTIONS[currentQuestionIndex];
-    var isMulti = q.type === "multi";
-
-    updateProgress();
-
-    // 質問文
-    document.getElementById("question-text").textContent = q.question;
-
-    // 補足テキスト
-    var noteEl = document.getElementById("question-note");
-    if (q.note) {
-      noteEl.textContent = q.note;
-      noteEl.classList.remove("hidden");
-    } else {
-      noteEl.classList.add("hidden");
-    }
-
-    // 選択肢を描画
-    var container = document.getElementById("choices-container");
-    container.innerHTML = "";
-
-    multiSelected = [];
-
-    q.choices.forEach(function (choice, i) {
-      var card = createCard(choice, i, isMulti);
-      container.appendChild(card);
-    });
-
-    // 次へボタン（マルチ選択時のみ表示）
-    var nextBtn = document.getElementById("next-btn");
-    if (isMulti) {
-      nextBtn.classList.remove("hidden");
-      nextBtn.disabled = false;
-    } else {
-      nextBtn.classList.add("hidden");
-    }
-
-    // フェードインアニメーション
-    var quizBody = document.querySelector(".quiz-body");
-    quizBody.classList.remove("fade-in");
-    void quizBody.offsetWidth; // reflow
-    quizBody.classList.add("fade-in");
-  }
-
-  // === シングル選択 ===
-  function handleSingleSelect(index, cardEl) {
-    if (isTransitioning) return; // 遷移中は無視
-
-    var q = QUESTIONS[currentQuestionIndex];
-
-    // 全カードの選択状態をリセット
-    var cards = document.querySelectorAll(".card-choice");
-    cards.forEach(function (c) { c.classList.remove("selected"); });
-
-    // 選択状態をセット
-    cardEl.classList.add("selected");
-    cardEl.classList.add("just-selected");
-
-    // 回答を記録
-    answers[currentQuestionIndex] = q.choices[index];
-
-    // 0.4秒後に自動遷移
-    isTransitioning = true;
-    setTimeout(function () {
-      isTransitioning = false;
-      goToNext();
-    }, 400);
-  }
-
-  // === 複数選択 ===
-  function handleMultiSelect(index, cardEl) {
-    var pos = multiSelected.indexOf(index);
-    if (pos === -1) {
-      multiSelected.push(index);
-      cardEl.classList.add("selected");
-      cardEl.classList.add("just-selected");
-    } else {
-      multiSelected.splice(pos, 1);
-      cardEl.classList.remove("selected");
-    }
-  }
-
-  // === 次の質問へ ===
-  function goToNext() {
-    var q = QUESTIONS[currentQuestionIndex];
-
-    // マルチ選択の回答を記録
-    if (q.type === "multi") {
-      var selectedChoices = multiSelected.map(function (i) { return q.choices[i]; });
-      answers[currentQuestionIndex] = selectedChoices;
-    }
-
-    currentQuestionIndex++;
-
-    if (currentQuestionIndex >= QUESTIONS.length) {
-      showResult();
-    } else {
-      renderQuestion();
-    }
-  }
-
-  // === 結果画面を表示 ===
+  // === 結果表示 ===
   function showResult() {
-    var result = calculateResult(answers);
-    var r = result.result;
-    var selectedAttractions = result.selectedAttractions;
+    var result = calculateResult(selectedDate, selectedHeight, selectedTags, selectedBudget);
+    showScreen("screen-result");
 
-    showScreen("result");
+    var mainContainer = document.getElementById("main-result");
+    var otherContainer = document.getElementById("other-results");
+    mainContainer.innerHTML = "";
+    otherContainer.innerHTML = "";
 
-    // カードの色
-    var card = document.getElementById("result-card");
-    card.style.borderColor = r.borderColor;
-    card.style.background = r.colorBg;
+    if (!result.main) {
+      mainContainer.innerHTML =
+        '<div class="no-result">' +
+          '<div class="no-result-emoji">😢</div>' +
+          '<p class="no-result-text">条件に合うパスが見つかりませんでした</p>' +
+          '<p class="no-result-sub">日付や身長の条件を変えて、もう一度お試しください。</p>' +
+        '</div>';
+      return;
+    }
+
+    // メインカード
+    mainContainer.innerHTML = buildResultCard(result.main, true);
+
+    // 他の候補
+    if (result.others.length > 0) {
+      var othersHtml = '<p class="other-results-heading">他の候補</p>';
+      result.others.forEach(function (item) {
+        othersHtml += buildResultCard(item, false);
+      });
+      otherContainer.innerHTML = othersHtml;
+    }
+  }
+
+  // === 結果カードHTML生成 ===
+  function buildResultCard(item, isMain) {
+    var p = item.pass;
+    var price = item.price;
+    var cardClass = isMain ? "result-card" : "sub-result-card";
+
+    var html = '<div class="' + cardClass + '"';
+    if (isMain) {
+      html += ' style="border-color:' + p.borderColor + '; background:' + p.colorBg + '"';
+    }
+    html += '>';
 
     // バッジ
-    var badge = document.getElementById("result-badge");
-    badge.textContent = r.shortName;
-    badge.style.background = r.color;
+    html += '<div class="result-card-badge" style="background:' + p.color + '">' + p.shortName + '</div>';
 
-    // パス名・価格・説明
-    document.getElementById("result-name").textContent = r.name;
-    var priceEl = document.getElementById("result-price");
-    priceEl.textContent = r.price;
-    priceEl.style.color = r.color;
-    document.getElementById("result-desc").textContent = r.description;
+    // パス名
+    html += '<h3 class="result-card-name">' + p.name + '</h3>';
 
-    // アトラクションリスト
-    var listEl = document.getElementById("attractions-list");
-    listEl.innerHTML = "";
-    var attractionsSection = document.getElementById("attractions-section");
+    // 価格
+    html += '<p class="result-card-price" style="color:' + p.color + '">¥' + price.toLocaleString() + '</p>';
 
-    if (r.attractions.length > 0) {
-      attractionsSection.classList.remove("hidden");
-      // ユーザーが選んだアトラクション名のセット
-      var selectedNames = selectedAttractions.map(function (c) { return c.title; });
+    // 説明
+    html += '<p class="result-card-desc">' + p.description + '</p>';
 
-      r.attractions.forEach(function (name) {
-        var li = document.createElement("li");
-        var isMatched = selectedNames.some(function (sn) { return name.indexOf(sn) !== -1; });
-        li.className = "attraction-tag" + (isMatched ? " matched" : "");
-        li.textContent = name;
-        listEl.appendChild(li);
-      });
+    // アトラクション（メインカードのみ詳細表示）
+    if (isMain) {
+      html += buildAttractionsSection(p);
+      html += buildAreaSection(p);
+      html += buildAdviceSection(p);
     } else {
-      attractionsSection.classList.add("hidden");
+      // サブカードは簡易アトラクション表示
+      html += buildSimpleAttractions(p);
     }
 
-    // エリア入場確約
-    document.getElementById("area-text").textContent = r.areaEntryText;
+    html += '</div>';
+    return html;
+  }
 
-    // アドバイス
-    document.getElementById("advice-text").textContent = r.advice;
+  // === アトラクションセクション ===
+  function buildAttractionsSection(pass) {
+    var html = '<div class="info-section">';
+    html += '<h4 class="info-title">含まれるアトラクション</h4>';
+    html += '<ul class="attractions-list">';
+
+    pass.attractions.fixed.forEach(function (name) {
+      var matched = isAttractionMatched(name);
+      html += '<li class="attraction-tag' + (matched ? ' matched' : '') + '">' + name + '</li>';
+    });
+
+    html += '</ul>';
+
+    // 選択制1
+    if (pass.attractions.selectable1.length > 0) {
+      html += '<p class="selectable-label">△1 以下から1つ選べます</p>';
+      html += '<ul class="attractions-list">';
+      pass.attractions.selectable1.forEach(function (name) {
+        var matched = isAttractionMatched(name);
+        html += '<li class="attraction-tag' + (matched ? ' matched' : '') + '">' + name + '</li>';
+      });
+      html += '</ul>';
+    }
+
+    // 選択制2
+    if (pass.attractions.selectable2.length > 0) {
+      html += '<p class="selectable-label">△2 以下から1つ選べます</p>';
+      html += '<ul class="attractions-list">';
+      pass.attractions.selectable2.forEach(function (name) {
+        var matched = isAttractionMatched(name);
+        html += '<li class="attraction-tag' + (matched ? ' matched' : '') + '">' + name + '</li>';
+      });
+      html += '</ul>';
+    }
+
+    html += '</div>';
+    return html;
+  }
+
+  // === アトラクション名がユーザー選択に一致するか ===
+  function isAttractionMatched(name) {
+    var matchMap = {
+      donkey: ["ドンキーコング", "トロッコ"],
+      mario: ["マリオカート"],
+      yoshi: ["ヨッシー"],
+      harrypotter: ["ハリー・ポッター", "ヒッポグリフ"],
+      dinosaur: ["ダイナソー", "フライング"],
+      hollywood: ["ハリウッド・ドリーム", "バックドロップ"],
+      minion: ["ミニオン"],
+      jurassic: ["ジュラシック・パーク"],
+      theater: ["4-D", "コナン", "シアター", "シング"]
+    };
+
+    return selectedTags.some(function (tag) {
+      if (tag === "any") return false;
+      var keywords = matchMap[tag] || [];
+      return keywords.some(function (kw) {
+        return name.indexOf(kw) !== -1;
+      });
+    });
+  }
+
+  // === エリア入場確約セクション ===
+  function buildAreaSection(pass) {
+    if (pass.areaEntry.length === 0) {
+      return '<div class="info-section"><h4 class="info-title">エリア入場確約</h4><p class="info-text">なし（通常の整理券 or 朝イチ入場で対応）</p></div>';
+    }
+
+    var html = '<div class="info-section"><h4 class="info-title">エリア入場確約</h4><div>';
+    pass.areaEntry.forEach(function (area) {
+      if (area === "nintendo") {
+        html += '<span class="area-badge nintendo">スーパー・ニンテンドー・ワールド</span>';
+      } else if (area === "harrypotter") {
+        html += '<span class="area-badge harrypotter">ウィザーディング・ワールド</span>';
+      }
+    });
+    html += '</div></div>';
+    return html;
+  }
+
+  // === アドバイスセクション ===
+  function buildAdviceSection(pass) {
+    return '<div class="info-section advice-section">' +
+      '<h4 class="info-title">ワンポイントアドバイス</h4>' +
+      '<p class="info-text">' + pass.advice + '</p>' +
+    '</div>';
+  }
+
+  // === サブカード用簡易アトラクション ===
+  function buildSimpleAttractions(pass) {
+    var all = pass.attractions.fixed.concat(pass.attractions.selectable1).concat(pass.attractions.selectable2);
+    if (all.length === 0) return "";
+
+    var html = '<ul class="sub-attractions">';
+    all.slice(0, 5).forEach(function (name) {
+      var matched = isAttractionMatched(name);
+      html += '<li class="attraction-tag' + (matched ? ' matched' : '') + '">' + name + '</li>';
+    });
+    if (all.length > 5) {
+      html += '<li class="attraction-tag">他' + (all.length - 5) + '件</li>';
+    }
+    html += '</ul>';
+    return html;
+  }
+
+  // === リセット ===
+  function resetAll() {
+    selectedDate = null;
+    selectedHeight = 0;
+    selectedTags = [];
+    selectedBudget = null;
+    currentMonth = 3;
+    isTransitioning = false;
   }
 
   // === 初期化 ===
   function init() {
     // スタートボタン
     document.getElementById("start-btn").addEventListener("click", function () {
-      currentQuestionIndex = 0;
-      answers = [];
-      multiSelected = [];
-      showScreen("quiz");
-      renderQuestion();
+      resetAll();
+      showScreen("screen-date");
+      renderCalendar(3);
+      renderHeightChoices();
+      renderAttractionChoices();
+      renderBudgetChoices();
     });
 
-    // 次へボタン（Q4用）
-    document.getElementById("next-btn").addEventListener("click", function () {
-      goToNext();
+    // 月タブ
+    document.querySelectorAll(".month-tab").forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        var month = parseInt(tab.getAttribute("data-month"));
+        renderCalendar(month);
+      });
+    });
+
+    // アトラクション「次へ」ボタン
+    document.getElementById("attraction-next-btn").addEventListener("click", function () {
+      if (selectedTags.length === 0) {
+        selectedTags = ["any"];
+      }
+      showScreen("screen-budget");
     });
 
     // もう一度やる
     document.getElementById("retry-btn").addEventListener("click", function () {
-      currentQuestionIndex = 0;
-      answers = [];
-      multiSelected = [];
-      showScreen("quiz");
-      renderQuestion();
+      resetAll();
+      showScreen("screen-date");
+      renderCalendar(3);
+      renderHeightChoices();
+      renderAttractionChoices();
+      renderBudgetChoices();
     });
   }
 

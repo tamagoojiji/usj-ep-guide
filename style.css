@@ -140,7 +140,6 @@ body {
   background: linear-gradient(90deg, #4A90D9, #6FB3F2);
   border-radius: 4px;
   transition: width 0.4s ease;
-  width: 0%;
 }
 
 .quiz-body {
@@ -170,6 +169,110 @@ body {
   flex-direction: column;
   gap: 10px;
   margin-bottom: 8px;
+}
+
+/* === カレンダーUI === */
+.month-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  justify-content: center;
+}
+
+.month-tab {
+  padding: 8px 24px;
+  border: 2px solid #DDE3EA;
+  border-radius: 20px;
+  background: #F8FAFC;
+  font-size: 15px;
+  font-weight: 700;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.month-tab.active {
+  background: #4A90D9;
+  border-color: #4A90D9;
+  color: #fff;
+}
+
+.calendar-header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.calendar-weekday {
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  padding: 6px 0;
+  color: #888;
+}
+
+.calendar-weekday.sun {
+  color: #E74C3C;
+}
+
+.calendar-weekday.sat {
+  color: #4A90D9;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.calendar-cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #F8FAFC;
+  border: 2px solid transparent;
+  color: #333;
+}
+
+.calendar-cell:hover:not(.disabled):not(.empty) {
+  background: #E3F0FC;
+  border-color: #B0C4DE;
+}
+
+.calendar-cell.selected {
+  background: #4A90D9;
+  color: #fff;
+  border-color: #4A90D9;
+}
+
+.calendar-cell.disabled {
+  background: #F0F0F0;
+  color: #CCC;
+  cursor: default;
+}
+
+.calendar-cell.empty {
+  background: transparent;
+  cursor: default;
+}
+
+.calendar-cell.sun:not(.disabled):not(.selected) {
+  color: #E74C3C;
+}
+
+.calendar-cell.sat:not(.disabled):not(.selected) {
+  color: #4A90D9;
+}
+
+.calendar-cell.today:not(.selected) {
+  border-color: #4A90D9;
 }
 
 /* === カードUI === */
@@ -251,7 +354,6 @@ body {
   display: block;
 }
 
-/* 選択時のアニメーション */
 @keyframes cardPulse {
   0% { transform: scale(1); }
   50% { transform: scale(1.02); }
@@ -262,8 +364,8 @@ body {
   animation: cardPulse 0.3s ease;
 }
 
-/* === 次へボタン (Q4用) === */
-#next-btn {
+/* 次へボタン */
+#attraction-next-btn {
   margin-top: 16px;
 }
 
@@ -291,6 +393,7 @@ body {
   position: relative;
   border: 3px solid;
   animation: fadeSlideIn 0.5s ease;
+  text-align: left;
 }
 
 @keyframes fadeSlideIn {
@@ -309,15 +412,16 @@ body {
 }
 
 .result-card-name {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 800;
   color: #333;
   margin-bottom: 8px;
   line-height: 1.4;
+  white-space: pre-line;
 }
 
 .result-card-price {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 800;
   margin-bottom: 12px;
 }
@@ -326,13 +430,12 @@ body {
   font-size: 14px;
   line-height: 1.7;
   color: #555;
-  text-align: left;
 }
 
 /* 情報セクション */
 .info-section {
   text-align: left;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   padding: 16px;
   background: #F8FAFC;
   border-radius: 12px;
@@ -380,6 +483,14 @@ body {
   border: 1px solid #4A90D9;
 }
 
+.selectable-label {
+  font-size: 12px;
+  color: #888;
+  margin-top: 8px;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
 .info-text {
   font-size: 14px;
   line-height: 1.7;
@@ -400,7 +511,104 @@ body {
   background: #F5A623;
 }
 
-/* アクション */
+/* エリア入場確約 */
+.area-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-right: 4px;
+  margin-bottom: 4px;
+}
+
+.area-badge.nintendo {
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+
+.area-badge.harrypotter {
+  background: #EDE7F6;
+  color: #5E35B1;
+}
+
+/* === 他の候補セクション === */
+.other-results-heading {
+  font-size: 14px;
+  color: #888;
+  font-weight: 600;
+  margin-bottom: 12px;
+  text-align: left;
+}
+
+.sub-result-card {
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+  border: 2px solid #E8EDF2;
+  background: #FAFBFC;
+  text-align: left;
+  animation: fadeSlideIn 0.5s ease;
+}
+
+.sub-result-card .result-card-badge {
+  font-size: 11px;
+  padding: 3px 12px;
+  margin-bottom: 8px;
+}
+
+.sub-result-card .result-card-name {
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.sub-result-card .result-card-price {
+  font-size: 18px;
+  margin-bottom: 8px;
+}
+
+.sub-result-card .result-card-desc {
+  font-size: 13px;
+}
+
+.sub-attractions {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.sub-attractions .attraction-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+/* === 結果なし === */
+.no-result {
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.no-result-emoji {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.no-result-text {
+  font-size: 16px;
+  font-weight: 700;
+  color: #555;
+  margin-bottom: 8px;
+}
+
+.no-result-sub {
+  font-size: 14px;
+  color: #888;
+  line-height: 1.6;
+}
+
+/* === アクション === */
 .result-actions {
   display: flex;
   flex-direction: column;
@@ -453,10 +661,14 @@ body {
   }
 
   .result-card-name {
-    font-size: 16px;
+    font-size: 15px;
   }
 
   .result-card-price {
     font-size: 20px;
+  }
+
+  .calendar-cell {
+    font-size: 13px;
   }
 }
