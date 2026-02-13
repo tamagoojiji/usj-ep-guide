@@ -3,7 +3,7 @@
 
   // === LIFF設定 ===
   var LIFF_ID = "2009123941-LX82tg0R";
-  var GAS_URL = ""; // GASデプロイ後に設定
+  var GAS_URL = "https://script.google.com/macros/s/AKfycbzeFQtwr0M_UsMDjXg-lv7KtUkVossqeuqeJzjfYorMmYhsk4ccyhIYNif0F0kLgKxF/exec";
 
   // === ユーザー情報 ===
   var lineUid = null;
@@ -193,7 +193,6 @@
       if (GAS_URL) {
         fetch(GAS_URL, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "registerUser", data: userData })
         }).catch(function (err) {
           console.error("GAS register error:", err);
@@ -272,7 +271,6 @@
     if (GAS_URL) {
       fetch(GAS_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "saveDiagnosis", data: logData })
       }).catch(function (err) {
         console.error("GAS save error:", err);
@@ -913,7 +911,6 @@
       if (GAS_URL) {
         fetch(GAS_URL, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "saveSurvey", data: surveyData })
         }).catch(function (err) {
           console.error("GAS survey error:", err);
