@@ -851,47 +851,45 @@
   // ============================================================
   //  アンケート
   // ============================================================
+  var surveyInitialized = false;
+
   function initSurvey() {
-    var q1Container = document.getElementById("survey-q1");
-    var q2Container = document.getElementById("survey-q2");
-    var q3Textarea = document.getElementById("survey-q3");
+    if (surveyInitialized) return;
+    surveyInitialized = true;
+
+    var surveySection = document.getElementById("survey-section");
     var submitBtn = document.getElementById("survey-submit-btn");
     var thanksMsg = document.getElementById("survey-thanks");
-    var surveySection = document.getElementById("survey-section");
+    var q3Textarea = document.getElementById("survey-q3");
 
     var q1Answer = null;
     var q2Answers = [];
 
-    // Q1: 単一選択
-    q1Container.querySelectorAll(".survey-option").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        q1Container.querySelectorAll(".survey-option").forEach(function (b) {
-          b.classList.remove("selected");
-        });
-        btn.classList.add("selected");
-        q1Answer = btn.getAttribute("data-value");
-        updateSurveySubmitBtn();
+    // Q1: 単一選択（イベント委譲）
+    document.getElementById("survey-q1").addEventListener("click", function (e) {
+      var btn = e.target.closest(".survey-option");
+      if (!btn) return;
+      this.querySelectorAll(".survey-option").forEach(function (b) {
+        b.classList.remove("selected");
       });
+      btn.classList.add("selected");
+      q1Answer = btn.getAttribute("data-value");
+      submitBtn.disabled = false;
     });
 
-    // Q2: 複数選択
-    q2Container.querySelectorAll(".survey-option").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        btn.classList.toggle("selected");
-        var val = btn.getAttribute("data-value");
-        var idx = q2Answers.indexOf(val);
-        if (idx === -1) {
-          q2Answers.push(val);
-        } else {
-          q2Answers.splice(idx, 1);
-        }
-        updateSurveySubmitBtn();
-      });
+    // Q2: 複数選択（イベント委譲）
+    document.getElementById("survey-q2").addEventListener("click", function (e) {
+      var btn = e.target.closest(".survey-option");
+      if (!btn) return;
+      btn.classList.toggle("selected");
+      var val = btn.getAttribute("data-value");
+      var idx = q2Answers.indexOf(val);
+      if (idx === -1) {
+        q2Answers.push(val);
+      } else {
+        q2Answers.splice(idx, 1);
+      }
     });
-
-    function updateSurveySubmitBtn() {
-      submitBtn.disabled = !q1Answer;
-    }
 
     // 送信
     submitBtn.addEventListener("click", function () {
