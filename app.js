@@ -2,7 +2,7 @@
   "use strict";
 
   // === LIFF設定 ===
-  var LIFF_ID = "2009119735-SCsuXNEA";
+  var LIFF_ID = "2009123941-LX82tg0R";
   var GAS_URL = ""; // GASデプロイ後に設定
 
   // === ユーザー情報 ===
