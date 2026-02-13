@@ -848,5 +848,86 @@
     });
   }
 
+  // ============================================================
+  //  アンケート
+  // ============================================================
+  function initSurvey() {
+    var q1Container = document.getElementById("survey-q1");
+    var q2Container = document.getElementById("survey-q2");
+    var q3Textarea = document.getElementById("survey-q3");
+    var submitBtn = document.getElementById("survey-submit-btn");
+    var thanksMsg = document.getElementById("survey-thanks");
+    var surveySection = document.getElementById("survey-section");
+
+    var q1Answer = null;
+    var q2Answers = [];
+
+    // Q1: 単一選択
+    q1Container.querySelectorAll(".survey-option").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        q1Container.querySelectorAll(".survey-option").forEach(function (b) {
+          b.classList.remove("selected");
+        });
+        btn.classList.add("selected");
+        q1Answer = btn.getAttribute("data-value");
+        updateSurveySubmitBtn();
+      });
+    });
+
+    // Q2: 複数選択
+    q2Container.querySelectorAll(".survey-option").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        btn.classList.toggle("selected");
+        var val = btn.getAttribute("data-value");
+        var idx = q2Answers.indexOf(val);
+        if (idx === -1) {
+          q2Answers.push(val);
+        } else {
+          q2Answers.splice(idx, 1);
+        }
+        updateSurveySubmitBtn();
+      });
+    });
+
+    function updateSurveySubmitBtn() {
+      submitBtn.disabled = !q1Answer;
+    }
+
+    // 送信
+    submitBtn.addEventListener("click", function () {
+      if (!q1Answer) return;
+
+      var surveyData = {
+        uid: lineUid,
+        q1: q1Answer,
+        q2: q2Answers.join(","),
+        q3: q3Textarea.value.trim(),
+        submittedAt: new Date().toISOString()
+      };
+
+      // ローカル保存
+      var surveyKey = "ep_survey_" + lineUid;
+      var surveys = JSON.parse(localStorage.getItem(surveyKey) || "[]");
+      surveys.push(surveyData);
+      localStorage.setItem(surveyKey, JSON.stringify(surveys));
+
+      // GASに送信
+      if (GAS_URL) {
+        fetch(GAS_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "saveSurvey", data: surveyData })
+        }).catch(function (err) {
+          console.error("GAS survey error:", err);
+        });
+      }
+
+      // UI更新
+      surveySection.classList.add("submitted");
+      thanksMsg.classList.remove("hidden");
+    });
+  }
+
   init();
+  initSurvey();
 })();

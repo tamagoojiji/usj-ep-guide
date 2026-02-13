@@ -272,6 +272,42 @@
           <a href="https://store.usj.co.jp/ja/jp/c/ticket" target="_blank" rel="noopener" class="btn btn-official btn-large">USJ公式サイトで購入する</a>
         </div>
 
+        <!-- アンケート -->
+        <div id="survey-section" class="survey-section">
+          <h3 class="survey-title">かんたんアンケート</h3>
+          <p class="survey-sub">今後の改善のため、ご協力お願いします！</p>
+
+          <div class="survey-q">
+            <p class="survey-q-label">Q1. EP診断どうでしたか？</p>
+            <div class="survey-options-single" id="survey-q1">
+              <button class="survey-option" data-value="buy">これを見て買いたいと思った</button>
+              <button class="survey-option" data-value="helpful">参考になったけど、まだ迷っている</button>
+              <button class="survey-option" data-value="understood">仕組みが分かった</button>
+              <button class="survey-option" data-value="unclear">正直よく分からなかった</button>
+            </div>
+          </div>
+
+          <div class="survey-q">
+            <p class="survey-q-label">Q2. こんなツールがあったら使いたい？（複数OK）</p>
+            <div class="survey-options-multi" id="survey-q2">
+              <button class="survey-option" data-value="crowd">混雑予想カレンダー</button>
+              <button class="survey-option" data-value="restaurant">レストラン診断</button>
+              <button class="survey-option" data-value="route">回り方プラン自動作成</button>
+              <button class="survey-option" data-value="checklist">持ち物チェックリスト</button>
+              <button class="survey-option" data-value="budget">予算シミュレーター</button>
+              <button class="survey-option" data-value="height">子どもの身長別アトラクション一覧</button>
+            </div>
+          </div>
+
+          <div class="survey-q">
+            <p class="survey-q-label">Q3. 何か一言あればお願いします！（任意）</p>
+            <textarea id="survey-q3" class="survey-textarea" placeholder="感想やリクエストなど..." maxlength="200"></textarea>
+          </div>
+
+          <button id="survey-submit-btn" class="btn btn-survey" disabled>アンケートを送信</button>
+          <p id="survey-thanks" class="survey-thanks hidden">ご回答ありがとうございます！</p>
+        </div>
+
         <!-- アクション -->
         <div class="result-actions">
           <button id="retry-btn" class="btn btn-primary btn-large">もう一度やる</button>

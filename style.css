@@ -1203,3 +1203,132 @@ body {
   padding: 2px 8px;
   border-radius: 10px;
 }
+
+/* ============================================================
+   アンケート
+   ============================================================ */
+.survey-section {
+  background: #FFFFFF;
+  border: 2px solid #E8EDF2;
+  border-radius: 16px;
+  padding: 24px 16px;
+  margin: 24px 0;
+}
+
+.survey-title {
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+  color: #333;
+  margin: 0 0 4px;
+}
+
+.survey-sub {
+  font-size: 13px;
+  color: #888;
+  text-align: center;
+  margin: 0 0 20px;
+}
+
+.survey-q {
+  margin-bottom: 20px;
+}
+
+.survey-q-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #333;
+  margin: 0 0 10px;
+}
+
+.survey-options-single,
+.survey-options-multi {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.survey-option {
+  display: block;
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 14px;
+  color: #333;
+  background: #F8F9FA;
+  border: 2px solid #E8EDF2;
+  border-radius: 10px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.survey-option:hover {
+  border-color: #4A90D9;
+}
+
+.survey-option.selected {
+  background: #EBF3FD;
+  border-color: #4A90D9;
+  color: #4A90D9;
+  font-weight: 600;
+}
+
+.survey-textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 12px;
+  font-size: 14px;
+  font-family: inherit;
+  border: 2px solid #E8EDF2;
+  border-radius: 10px;
+  background: #F8F9FA;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.survey-textarea:focus {
+  outline: none;
+  border-color: #4A90D9;
+  background: #FFFFFF;
+}
+
+.btn-survey {
+  width: 100%;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #FFFFFF;
+  background: #4A90D9;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: opacity 0.2s;
+}
+
+.btn-survey:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.btn-survey:not(:disabled):hover {
+  opacity: 0.85;
+}
+
+.survey-thanks {
+  text-align: center;
+  color: #4A90D9;
+  font-weight: 700;
+  font-size: 16px;
+  margin-top: 12px;
+}
+
+.survey-section.submitted .survey-q,
+.survey-section.submitted .btn-survey {
+  display: none;
+}
+
+.survey-section.submitted .survey-sub {
+  display: none;
+}
