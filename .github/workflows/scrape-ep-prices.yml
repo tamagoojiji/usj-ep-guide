@@ -1,0 +1,41 @@
+name: EP価格スクレイピング
+
+on:
+  schedule:
+    # 毎日 10:00 JST (01:00 UTC)
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+    # 手動トリガー
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: チェックアウト
+        uses: actions/checkout@v4
+
+      - name: Node.js セットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 依存パッケージインストール
+        working-directory: scripts
+        run: npm install
+
+      - name: EP価格スクレイピング実行
+        working-directory: scripts
+        env:
+          GAS_WEB_APP_URL: ${{ secrets.GAS_WEB_APP_URL }}
+          GAS_API_KEY: ${{ secrets.GAS_API_KEY }}
+        run: node scrape-ep-prices.js
+
+      - name: スクショをArtifactsに保存
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ep-price-screenshots-${{ github.run_number }}
+          path: scripts/screenshots/
+          retention-days: 30

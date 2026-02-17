@@ -1,0 +1,12 @@
+{
+  "name": "usj-ep-price-scraper",
+  "version": "1.0.0",
+  "private": true,
+  "description": "USJ EP価格ページのスクリーンショット取得",
+  "scripts": {
+    "scrape": "node scrape-ep-prices.js"
+  },
+  "dependencies": {
+    "puppeteer": "^24.0.0"
+  }
+}
