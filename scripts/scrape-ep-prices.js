@@ -58,7 +58,7 @@ const SELECTORS = {
 };
 
 const SCREENSHOT_DIR = path.join(__dirname, "screenshots");
-const WAIT_BETWEEN_PAGES_MS = 3000;
+const WAIT_BETWEEN_PAGES_MS = 35000; // Gemini API rate limit対策（20リクエスト/分）
 const PAGE_LOAD_TIMEOUT_MS = 60000;
 const QUEUE_IT_TIMEOUT_MS = 120000;
 
@@ -96,8 +96,8 @@ async function main() {
       const base64 = fs.readFileSync(screenshotPath, { encoding: "base64" });
       console.log(`スクショ取得完了: ${screenshotPath} (${Math.round(base64.length / 1024)}KB base64)`);
 
-      // GAS APIにPOST
-      const gasResult = await postToGas(GAS_URL, API_KEY, pass.passId, base64);
+      // GAS APIにPOST（quota超過時はリトライ）
+      const gasResult = await postToGasWithRetry(GAS_URL, API_KEY, pass.passId, base64);
       console.log(`GAS応答: ${JSON.stringify(gasResult)}`);
 
       results.push({ passId: pass.passId, success: true, result: gasResult });
@@ -202,6 +202,27 @@ async function handleQueueIt(page) {
   }
 
   throw new Error("Queue-it タイムアウト（120秒）");
+}
+
+/**
+ * GAS APIにPOST（quota超過時は最大2回リトライ）
+ */
+async function postToGasWithRetry(gasUrl, apiKey, passId, base64, maxRetries = 2) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const result = await postToGas(gasUrl, apiKey, passId, base64);
+
+    // quota超過エラーならリトライ
+    if (!result.success && result.error && result.error.includes("quota")) {
+      if (attempt < maxRetries) {
+        const waitSec = 35;
+        console.log(`Gemini quota超過 — ${waitSec}秒待機してリトライ (${attempt + 1}/${maxRetries})`);
+        await sleep(waitSec * 1000);
+        continue;
+      }
+    }
+
+    return result;
+  }
 }
 
 /**
