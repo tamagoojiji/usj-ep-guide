@@ -140,15 +140,16 @@ async function takeScreenshot(browser, url, outputPath) {
     // ビューポート設定（カレンダーが見やすいサイズ）
     await page.setViewport({ width: 1280, height: 1024 });
 
-    // ページ遷移
+    // ページ遷移（SPAのため domcontentloaded で待つ。networkidle2だとタイムアウトする）
     console.log(`ページ遷移: ${url}`);
     const response = await page.goto(url, {
-      waitUntil: "networkidle2",
+      waitUntil: "domcontentloaded",
       timeout: PAGE_LOAD_TIMEOUT_MS,
     });
 
     // Queue-it リダイレクト検知
     const currentUrl = page.url();
+    console.log(`現在のURL: ${currentUrl}`);
     if (currentUrl.includes("queue-it") || currentUrl.includes("queue.it")) {
       console.log("Queue-it 検出 — 待機中...");
       await handleQueueIt(page);
@@ -159,16 +160,16 @@ async function takeScreenshot(browser, url, outputPath) {
       throw new Error(`HTTPエラー: ${response.status()}`);
     }
 
-    // 価格カレンダーの描画待ち
+    // SPAのレンダリング完了を待つ（まず価格カレンダーを探す）
     try {
-      await page.waitForSelector(SELECTORS.calendarArea, { timeout: 15000 });
+      await page.waitForSelector(SELECTORS.calendarArea, { timeout: 30000 });
       console.log("カレンダー要素を検出");
     } catch {
-      console.log("カレンダー要素が見つかりません。ページ全体をスクショします");
+      console.log("カレンダー要素が見つかりません。追加待機してページ全体をスクショします");
     }
 
-    // 追加の描画待ち（SPAのレンダリング完了を待つ）
-    await sleep(3000);
+    // 追加の描画待ち（JS描画の完了を待つ）
+    await sleep(5000);
 
     // フルページスクショ
     await page.screenshot({
@@ -176,6 +177,8 @@ async function takeScreenshot(browser, url, outputPath) {
       fullPage: true,
       type: "png",
     });
+
+    console.log(`スクショ保存: ${outputPath}`);
   } finally {
     await page.close();
   }
