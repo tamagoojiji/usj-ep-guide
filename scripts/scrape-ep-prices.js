@@ -17,37 +17,9 @@ const path = require("path");
 
 // === 設定 ===
 
-// パス定義: passId → 価格ページURL
-// URLはUSJ公式ストアの各EP価格カレンダーページ
-// ※ URL変更時はここを更新する
-// テスト用: まず2パスで動作確認。URL確定後に全16パスを追加する
-const PASS_PAGES = [
-  {
-    passId: "premium",
-    url: "https://store.usj.co.jp/ja/jp/c/expresspass/EXPRBID_25?config=true",
-    label: "プレミアム",
-  },
-  {
-    passId: "ep7_trolley_selection",
-    url: "https://store.usj.co.jp/ja/jp/c/expresspass/EXP0068?config=true",
-    label: "EP7 トロッコ＆セレクション",
-  },
-  // --- 以下、URL確定後に追加 ---
-  // { passId: "ep4_minion_hollywood", url: "https://store.usj.co.jp/ja/jp/c/expresspass/???", label: "EP4 ミニオン＆ハリウッド" },
-  // { passId: "ep4_race_trolley", url: "...", label: "EP4 レース＆トロッコ" },
-  // { passId: "ep4_trolley_jaws", url: "...", label: "EP4 トロッコ＆ジョーズ" },
-  // { passId: "ep4_race_jaws", url: "...", label: "EP4 レース＆ジョーズ" },
-  // { passId: "ep4_dino_4d", url: "...", label: "EP4 フラダイ＆4-D" },
-  // { passId: "ep4_minion_adventure", url: "...", label: "EP4 ミニオン＆アドベンチャー" },
-  // { passId: "ep4_space_minion_mission", url: "...", label: "EP4 スペファン＆ミニオンHM" },
-  // { passId: "ep4_space_minion", url: "...", label: "EP4 スペファン＆ミニオン" },
-  // { passId: "ep4_dino_jurassic", url: "...", label: "EP4 フラダイ＆ジュラパ" },
-  // { passId: "ep4_adventure_race", url: "...", label: "EP4 アドベンチャー＆レース" },
-  // { passId: "ep4_trolley_jurassic", url: "...", label: "EP4 トロッコ＆ジュラパ" },
-  // { passId: "ep4_minion_theater", url: "...", label: "EP4 ミニオン＆シアター" },
-  // { passId: "ep4_race_theater", url: "...", label: "EP4 レース＆シアター" },
-  // { passId: "ep4_backdrop_race", url: "...", label: "EP4 バックドロップ＆レース" },
-];
+// パス定義: GAS「スクレイピングURL」シートから動的に取得
+// ユーザーがスプレッドシートにURLを貼り付けるだけでスクレイピング対象に追加される
+let PASS_PAGES = []; // fetchPassPages() で初期化
 
 // セレクタ設定（DOM構造変更時にここを更新）
 const SELECTORS = {
@@ -64,6 +36,27 @@ const QUEUE_IT_TIMEOUT_MS = 120000;
 
 // === メイン処理 ===
 
+/**
+ * GAS APIから「スクレイピングURL」シートのURL一覧を取得
+ */
+async function fetchPassPages(gasUrl) {
+  const apiUrl = gasUrl + "?action=getScrapingUrls";
+  console.log("GAS APIからスクレイピングURL一覧を取得...");
+
+  const response = await fetch(apiUrl, { redirect: "follow" });
+  if (!response.ok) {
+    throw new Error(`URL一覧取得エラー: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  if (!data.success) {
+    throw new Error(`URL一覧取得エラー: ${data.error}`);
+  }
+
+  console.log(`URL一覧取得完了: ${data.active}件 / 全${data.total}件`);
+  return data.urls; // [{passId, label, url}, ...]
+}
+
 async function main() {
   const GAS_URL = process.env.GAS_WEB_APP_URL;
   const API_KEY = process.env.GAS_API_KEY;
@@ -72,6 +65,17 @@ async function main() {
     console.error("環境変数 GAS_WEB_APP_URL / GAS_API_KEY が未設定です");
     process.exit(1);
   }
+
+  // スクレイピングURL一覧をGASから取得
+  PASS_PAGES = await fetchPassPages(GAS_URL);
+
+  if (PASS_PAGES.length === 0) {
+    console.log("スクレイピング対象のURLがありません。スプレッドシートにURLを登録してください。");
+    process.exit(0);
+  }
+
+  console.log(`\nスクレイピング対象: ${PASS_PAGES.length}パス`);
+  PASS_PAGES.forEach((p, i) => console.log(`  ${i + 1}. ${p.label} (${p.passId})`));
 
   // スクショ保存ディレクトリ
   if (!fs.existsSync(SCREENSHOT_DIR)) {
