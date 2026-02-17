@@ -1,5 +1,14 @@
-// === アトラクションタグ定義 ===
-var ATTRACTION_TAGS = {
+// === アトラクションタグ定義（API取得後に上書きされる） ===
+var ATTRACTION_TAGS = {};
+
+// === パスデータ（API取得後に上書きされる） ===
+var PASSES = [];
+
+// === データ取得完了フラグ ===
+var PASS_DATA_LOADED = false;
+
+// === フォールバック用アトラクションタグ定義 ===
+var FALLBACK_ATTRACTION_TAGS = {
   donkey: "ドンキーコング・トロッコ",
   mario: "マリオカート",
   yoshi: "ヨッシー・アドベンチャー",
@@ -12,8 +21,8 @@ var ATTRACTION_TAGS = {
   any: "特にこだわりなし"
 };
 
-// === 全16パスデータ ===
-var PASSES = [
+// === フォールバック用全16パスデータ（API障害時に使用） ===
+var FALLBACK_PASSES = [
   // 1. プレミアム
   {
     id: "premium",

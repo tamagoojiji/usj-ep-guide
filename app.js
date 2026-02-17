@@ -791,13 +791,50 @@
   }
 
   // ============================================================
+  //  パスデータをAPI取得（フォールバック付き）
+  // ============================================================
+  function loadPassData(callback) {
+    // フォールバック適用
+    function applyFallback() {
+      if (typeof FALLBACK_PASSES !== "undefined" && FALLBACK_PASSES.length > 0) {
+        PASSES = FALLBACK_PASSES;
+        ATTRACTION_TAGS = FALLBACK_ATTRACTION_TAGS;
+        PASS_DATA_LOADED = true;
+        console.log("パスデータ: フォールバック使用 (" + PASSES.length + "件)");
+      }
+      callback();
+    }
+
+    fetch(GAS_URL + "?action=getPassData")
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (data.error || !data.passes || data.passes.length === 0) {
+          console.warn("API応答エラー:", data.error || "パスデータなし");
+          applyFallback();
+          return;
+        }
+        PASSES = data.passes;
+        ATTRACTION_TAGS = data.attractionTags;
+        PASS_DATA_LOADED = true;
+        console.log("パスデータ: API取得成功 (" + PASSES.length + "件)");
+        callback();
+      })
+      .catch(function (err) {
+        console.warn("パスデータAPI取得失敗:", err);
+        applyFallback();
+      });
+  }
+
+  // ============================================================
   //  初期化
   // ============================================================
   function init() {
     initPrivacyModal();
 
-    // LIFF初期化
-    initLiff();
+    // パスデータ取得後にLIFF初期化
+    loadPassData(function () {
+      initLiff();
+    });
 
     // スタートボタン
     document.getElementById("start-btn").addEventListener("click", function () {
