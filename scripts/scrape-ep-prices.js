@@ -207,14 +207,14 @@ async function handleQueueIt(page) {
 /**
  * GAS APIにPOST（quota超過時は最大2回リトライ）
  */
-async function postToGasWithRetry(gasUrl, apiKey, passId, base64, maxRetries = 2) {
+async function postToGasWithRetry(gasUrl, apiKey, passId, base64, maxRetries = 3) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const result = await postToGas(gasUrl, apiKey, passId, base64);
 
     // quota超過エラーならリトライ
     if (!result.success && result.error && result.error.includes("quota")) {
       if (attempt < maxRetries) {
-        const waitSec = 35;
+        const waitSec = 60;
         console.log(`Gemini quota超過 — ${waitSec}秒待機してリトライ (${attempt + 1}/${maxRetries})`);
         await sleep(waitSec * 1000);
         continue;
