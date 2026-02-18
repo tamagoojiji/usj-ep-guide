@@ -244,26 +244,43 @@ async function extractPricesFromPage(browser, url) {
       failedRequests.forEach((r, i) => console.log(`    [${i}] ${r}`));
     }
 
-    // SSR埋め込みデータの有無チェック
-    const ssrInfo = await page.evaluate(() => {
-      // Angular Transfer State (SSR embedded data)
-      const transferStateScript = document.querySelector("script#serverApp-state, script[type='application/json'][id*='state']");
-      // __INITIAL_STATE__ などの埋め込みデータ
-      const scripts = document.querySelectorAll("script:not([src])");
-      let hasTransferState = !!transferStateScript;
-      let transferStateLength = transferStateScript ? transferStateScript.textContent.length : 0;
-      let inlineScriptCount = scripts.length;
-      let largestInlineScript = 0;
-      let largestInlineScriptPreview = "";
-      for (const s of scripts) {
-        if (s.textContent.length > largestInlineScript) {
-          largestInlineScript = s.textContent.length;
-          largestInlineScriptPreview = s.textContent.substring(0, 100);
-        }
+    // ページ構造のダンプ（動作パスとの比較用）
+    const pageStructure = await page.evaluate(() => {
+      const info = {};
+      // bodyの直下のカスタム要素タグ名（Angularコンポーネント）
+      info.bodyChildren = Array.from(document.body.children)
+        .filter(el => el.tagName.includes("-") || ["MAIN", "APP-ROOT", "GDS"].some(t => el.tagName.includes(t)))
+        .map(el => el.tagName.toLowerCase())
+        .slice(0, 20);
+      // app-root配下のコンポーネント（1-2階層）
+      const appRoot = document.querySelector("app-root, gds-app");
+      if (appRoot) {
+        info.appRootChildren = Array.from(appRoot.querySelectorAll("*"))
+          .filter(el => el.tagName.includes("-"))
+          .map(el => el.tagName.toLowerCase())
+          .filter((v, i, a) => a.indexOf(v) === i) // unique
+          .slice(0, 50);
       }
-      return { hasTransferState, transferStateLength, inlineScriptCount, largestInlineScript, largestInlineScriptPreview };
+      // カレンダー周辺のHTML構造
+      const calendar = document.querySelector("gds-calendar, gds-multi-day-calendar, [class*='calendar']");
+      if (calendar) {
+        info.calendarParent = calendar.parentElement ? calendar.parentElement.tagName.toLowerCase() : "(none)";
+        info.calendarSiblings = Array.from(calendar.parentElement ? calendar.parentElement.children : [])
+          .map(el => `${el.tagName.toLowerCase()}${el.className ? '.' + el.className.split(' ')[0] : ''}`)
+          .slice(0, 10);
+      }
+      // gds-quantity の有無と周辺
+      const quantity = document.querySelector("gds-quantity");
+      info.hasQuantity = !!quantity;
+      if (quantity) {
+        info.quantityParent = quantity.parentElement.tagName.toLowerCase();
+      }
+      // bodyTextの最初の500文字（コンテンツの有無判定）
+      info.bodyTextPreview = document.body.innerText.substring(0, 500).replace(/\n+/g, " | ");
+      info.bodyTextLength = document.body.innerText.length;
+      return info;
     });
-    console.log(`  SSR: transferState=${ssrInfo.hasTransferState}(${ssrInfo.transferStateLength}), inlineScripts=${ssrInfo.inlineScriptCount}, largest=${ssrInfo.largestInlineScript}`);
+    console.log(`  構造: ${JSON.stringify(pageStructure)}`);
 
     // 全日disabledなら枚数セレクタ操作 + 追加待機（SPAの遅延レンダリング対応）
     let allDisabled = await page.evaluate(() => {
