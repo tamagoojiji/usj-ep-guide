@@ -1,5 +1,5 @@
 /**
- * USJ EP価格ページ スクリーンショット取得 & GAS API送信
+ * USJ EP価格ページ DOM直接抽出 & GAS API送信
  *
  * 使い方:
  *   node scrape-ep-prices.js
@@ -8,31 +8,20 @@
  *   GAS_WEB_APP_URL - GASデプロイメントURL
  *   GAS_API_KEY     - PRICE_UPDATE_API_KEY と同じ値
  *
- * 各パスの価格ページURLを設定し、Puppeteerでスクショ→GASにPOST
+ * 各パスの価格ページを開き、aria-label属性から価格を直接抽出→GASにPOST
  */
 
 const puppeteer = require("puppeteer");
-const fs = require("fs");
-const path = require("path");
 
 // === 設定 ===
 
 // パス定義: GAS「スクレイピングURL」シートから動的に取得
-// ユーザーがスプレッドシートにURLを貼り付けるだけでスクレイピング対象に追加される
 let PASS_PAGES = []; // fetchPassPages() で初期化
 
-// セレクタ設定（DOM構造変更時にここを更新）
-const SELECTORS = {
-  // 価格カレンダーが表示される領域
-  calendarArea: '[class*="calendar"], [class*="Calendar"], [class*="price"], [data-testid*="calendar"]',
-  // Queue-it待機ページの検出
-  queueIt: 'iframe[src*="queue-it"], #queueit',
-};
-
-const SCREENSHOT_DIR = path.join(__dirname, "screenshots");
-const WAIT_BETWEEN_PAGES_MS = 35000; // Gemini API rate limit対策（20リクエスト/分）
+const WAIT_BETWEEN_PAGES_MS = 5000; // Gemini不使用のため短縮
 const PAGE_LOAD_TIMEOUT_MS = 60000;
 const QUEUE_IT_TIMEOUT_MS = 120000;
+const MAX_MONTH_NAVIGATIONS = 5; // 最大月送り回数
 
 // === メイン処理 ===
 
@@ -77,11 +66,6 @@ async function main() {
   console.log(`\nスクレイピング対象: ${PASS_PAGES.length}パス`);
   PASS_PAGES.forEach((p, i) => console.log(`  ${i + 1}. ${p.label} (${p.passId})`));
 
-  // スクショ保存ディレクトリ
-  if (!fs.existsSync(SCREENSHOT_DIR)) {
-    fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
-  }
-
   const browser = await puppeteer.launch({
     headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
@@ -93,15 +77,15 @@ async function main() {
     console.log(`\n--- ${pass.label} (${pass.passId}) ---`);
 
     try {
-      const screenshotPath = path.join(SCREENSHOT_DIR, `${pass.passId}.png`);
-      await takeScreenshot(browser, pass.url, screenshotPath);
+      const prices = await extractPricesFromPage(browser, pass.url);
+      console.log(`価格抽出完了: ${prices.length}件`);
 
-      // base64エンコード
-      const base64 = fs.readFileSync(screenshotPath, { encoding: "base64" });
-      console.log(`スクショ取得完了: ${screenshotPath} (${Math.round(base64.length / 1024)}KB base64)`);
+      if (prices.length === 0) {
+        throw new Error("価格データが見つかりませんでした");
+      }
 
-      // GAS APIにPOST（quota超過時はリトライ）
-      const gasResult = await postToGasWithRetry(GAS_URL, API_KEY, pass.passId, base64);
+      // GAS APIにPOST
+      const gasResult = await postToGas(GAS_URL, API_KEY, pass.passId, prices);
       console.log(`GAS応答: ${JSON.stringify(gasResult)}`);
 
       results.push({ passId: pass.passId, success: true, result: gasResult });
@@ -110,7 +94,7 @@ async function main() {
       results.push({ passId: pass.passId, success: false, error: err.message });
     }
 
-    // レート制限対策: パス間にウェイト
+    // パス間にウェイト
     if (PASS_PAGES.indexOf(pass) < PASS_PAGES.length - 1) {
       console.log(`${WAIT_BETWEEN_PAGES_MS / 1000}秒待機...`);
       await sleep(WAIT_BETWEEN_PAGES_MS);
@@ -135,16 +119,18 @@ async function main() {
 }
 
 /**
- * ページに移動してスクショを撮る
+ * ページを開いてカレンダーDOMから価格を直接抽出（複数月対応）
+ * @param {Browser} browser - Puppeteerブラウザインスタンス
+ * @param {string} url - 価格ページURL
+ * @return {Array<{date: string, price: number}>} 抽出された価格データ
  */
-async function takeScreenshot(browser, url, outputPath) {
+async function extractPricesFromPage(browser, url) {
   const page = await browser.newPage();
 
   try {
-    // ビューポート設定（カレンダーが見やすいサイズ）
     await page.setViewport({ width: 1280, height: 1024 });
 
-    // ページ遷移（SPAのため domcontentloaded で待つ。networkidle2だとタイムアウトする）
+    // ページ遷移
     console.log(`ページ遷移: ${url}`);
     const response = await page.goto(url, {
       waitUntil: "domcontentloaded",
@@ -164,48 +150,116 @@ async function takeScreenshot(browser, url, outputPath) {
       throw new Error(`HTTPエラー: ${response.status()}`);
     }
 
-    // SPAのレンダリング完了を待つ（まず価格カレンダーを探す）
+    // カレンダー要素の表示を待つ
     try {
-      await page.waitForSelector(SELECTORS.calendarArea, { timeout: 30000 });
+      await page.waitForSelector("gds-calendar-day", { timeout: 30000 });
       console.log("カレンダー要素を検出");
     } catch {
-      console.log("カレンダー要素が見つかりません。追加待機してページ全体をスクショします");
+      throw new Error("カレンダー要素（gds-calendar-day）が見つかりません");
     }
 
-    // 追加の描画待ち（JS描画の完了を待つ）
-    await sleep(5000);
-
-    // ページ下までスクロールして遅延読み込みコンテンツを発火
-    console.log("ページ全体をスクロール中...");
-    await page.evaluate(async () => {
-      await new Promise((resolve) => {
-        let totalHeight = 0;
-        const distance = 500;
-        const timer = setInterval(() => {
-          window.scrollBy(0, distance);
-          totalHeight += distance;
-          if (totalHeight >= document.body.scrollHeight) {
-            clearInterval(timer);
-            resolve();
-          }
-        }, 300);
-      });
-    });
-    // トップに戻してからフルページスクショ
-    await page.evaluate(() => window.scrollTo(0, 0));
+    // 描画完了を待つ
     await sleep(3000);
-    console.log("スクロール完了 — スクショ取得");
 
-    // フルページスクショ
-    await page.screenshot({
-      path: outputPath,
-      fullPage: true,
-      type: "png",
-    });
+    // 現在表示中の月から価格を抽出
+    const allPrices = new Map(); // 重複排除用: date → price
 
-    console.log(`スクショ保存: ${outputPath}`);
+    for (let nav = 0; nav <= MAX_MONTH_NAVIGATIONS; nav++) {
+      const monthPrices = await extractCurrentMonthPrices(page);
+      console.log(`  月${nav + 1}: ${monthPrices.length}件の価格を抽出`);
+
+      if (monthPrices.length === 0 && nav > 0) {
+        // 価格付き日付がなくなったら終了
+        console.log("  価格付き日付なし — 抽出終了");
+        break;
+      }
+
+      for (const item of monthPrices) {
+        allPrices.set(item.date, item.price);
+      }
+
+      // 最後の月なら次へ進まない
+      if (nav === MAX_MONTH_NAVIGATIONS) break;
+
+      // 右矢印ボタンで次の月へ
+      const navigated = await navigateToNextMonth(page);
+      if (!navigated) {
+        console.log("  次の月への移動不可 — 抽出終了");
+        break;
+      }
+
+      // 月送り後の描画待ち
+      await sleep(2000);
+    }
+
+    // Map → 配列に変換してソート
+    const result = Array.from(allPrices.entries())
+      .map(([date, price]) => ({ date, price }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    return result;
   } finally {
     await page.close();
+  }
+}
+
+/**
+ * 現在表示中のカレンダーから価格を抽出
+ * @param {Page} page - Puppeteerページ
+ * @return {Array<{date: string, price: number}>}
+ */
+async function extractCurrentMonthPrices(page) {
+  return await page.evaluate(() => {
+    const prices = [];
+    const days = document.querySelectorAll("gds-calendar-day");
+
+    for (const day of days) {
+      // 無効（過去日/非販売日）はスキップ
+      if (day.getAttribute("data-disabled") === "true") continue;
+
+      const dataDate = day.getAttribute("data-date");
+      const ariaLabel = day.getAttribute("aria-label");
+
+      if (!dataDate || !ariaLabel) continue;
+
+      // aria-label例: "2026年3月1日日曜日 - 11800"
+      const priceMatch = ariaLabel.match(/\s-\s(\d+)$/);
+      if (!priceMatch) continue;
+
+      const price = parseInt(priceMatch[1], 10);
+      if (price < 5000 || price > 100000) continue;
+
+      // data-date は "MM-DD-YYYY" 形式 → "YYYY-MM-DD" に変換
+      const parts = dataDate.split("-");
+      if (parts.length !== 3) continue;
+      const dateStr = `${parts[2]}-${parts[0]}-${parts[1]}`;
+
+      prices.push({ date: dateStr, price: price });
+    }
+
+    return prices;
+  });
+}
+
+/**
+ * 右矢印ボタンで次の月に移動
+ * @param {Page} page - Puppeteerページ
+ * @return {boolean} 移動できたかどうか
+ */
+async function navigateToNextMonth(page) {
+  try {
+    const clicked = await page.evaluate(() => {
+      // gds-buttons.right-arrow 内の button を探す
+      const rightArrow = document.querySelector("gds-buttons.right-arrow button");
+      if (rightArrow && !rightArrow.disabled) {
+        rightArrow.click();
+        return true;
+      }
+      return false;
+    });
+    return clicked;
+  } catch {
+    return false;
   }
 }
 
@@ -230,37 +284,15 @@ async function handleQueueIt(page) {
 }
 
 /**
- * GAS APIにPOST（quota超過時は最大2回リトライ）
+ * GAS Web App に価格データをPOST
  */
-async function postToGasWithRetry(gasUrl, apiKey, passId, base64, maxRetries = 3) {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const result = await postToGas(gasUrl, apiKey, passId, base64);
-
-    // quota超過エラーならリトライ
-    if (!result.success && result.error && result.error.includes("quota")) {
-      if (attempt < maxRetries) {
-        const waitSec = 60;
-        console.log(`Gemini quota超過 — ${waitSec}秒待機してリトライ (${attempt + 1}/${maxRetries})`);
-        await sleep(waitSec * 1000);
-        continue;
-      }
-    }
-
-    return result;
-  }
-}
-
-/**
- * GAS Web App にスクショデータをPOST
- */
-async function postToGas(gasUrl, apiKey, passId, base64) {
+async function postToGas(gasUrl, apiKey, passId, prices) {
   const body = JSON.stringify({
-    action: "updatePricesFromScreenshot",
+    action: "updatePricesDirectly",
     apiKey: apiKey,
     data: {
       passId: passId,
-      base64: base64,
-      mimeType: "image/png",
+      prices: prices,
     },
   });
 
