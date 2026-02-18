@@ -359,12 +359,28 @@ async function extractPricesFromPage(browser, url) {
             return iframePrices;
           }
 
-          // 最終手段: ページリロードしてネットワークレスポンスからAPI価格を抽出
-          console.log("API応答から価格抽出を試行（ページリロード）");
-          const apiPrices = await extractPricesFromApiResponses(page, page.url());
-          if (apiPrices.length > 0) {
-            console.log(`API応答から${apiPrices.length}件の価格を検出`);
-            return apiPrices;
+          // URLパラメータを変えて再試行
+          console.log("URLパラメータ変更で再試行");
+          const currentPageUrl = page.url();
+          const urlVariants = [
+            currentPageUrl + "&quantity=1",
+            currentPageUrl + "&adults=1",
+            currentPageUrl.replace("?config=true", ""),
+          ];
+          for (const variantUrl of urlVariants) {
+            console.log(`  試行: ${variantUrl.substring(0, 100)}`);
+            await page.goto(variantUrl, { waitUntil: "domcontentloaded", timeout: PAGE_LOAD_TIMEOUT_MS });
+            try { await page.waitForNetworkIdle({ idleTime: 2000, timeout: 15000 }); } catch {}
+            await sleep(3000);
+            const variantEnabled = await page.evaluate(() => {
+              const days = document.querySelectorAll("gds-calendar-day");
+              return Array.from(days).filter(d => d.getAttribute("data-disabled") !== "true").length;
+            });
+            console.log(`  enabled日数: ${variantEnabled}`);
+            if (variantEnabled > 0) {
+              console.log(`  URLバリアント成功! enabled=${variantEnabled}`);
+              break;
+            }
           }
         }
       }
