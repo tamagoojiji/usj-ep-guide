@@ -161,6 +161,32 @@ async function extractPricesFromPage(browser, url) {
     // 描画完了を待つ
     await sleep(3000);
 
+    // デバッグ: 非disabled要素の内部構造を確認（1回目の月のみ）
+    const debugSample = await page.evaluate(() => {
+      const days = document.querySelectorAll("gds-calendar-day");
+      let enabledCount = 0;
+      let disabledCount = 0;
+      let sample = null;
+      for (const d of days) {
+        if (d.getAttribute("data-disabled") === "true") {
+          disabledCount++;
+        } else {
+          enabledCount++;
+          if (!sample) {
+            const btn = d.querySelector("button[aria-label]");
+            sample = {
+              date: d.getAttribute("data-date"),
+              hasButton: !!btn,
+              ariaLabel: btn ? btn.getAttribute("aria-label") : null,
+              innerHTML: d.innerHTML.substring(0, 400)
+            };
+          }
+        }
+      }
+      return { total: days.length, enabledCount, disabledCount, sample };
+    });
+    console.log(`デバッグ: 有効=${debugSample.enabledCount}, 無効=${debugSample.disabledCount}, サンプル=${JSON.stringify(debugSample.sample)}`);
+
     // 現在表示中の月から価格を抽出
     const allPrices = new Map(); // 重複排除用: date → price
 
