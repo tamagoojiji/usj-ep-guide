@@ -78,8 +78,15 @@ async function main() {
   PASS_PAGES.forEach((p, i) => console.log(`  ${i + 1}. ${p.label} (${p.passId})`));
 
   const browser = await puppeteer.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+    headless: "new",
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-blink-features=AutomationControlled",
+      "--disable-features=AutomationControlled",
+      "--disable-infobars",
+    ],
   });
 
   const results = [];
@@ -147,6 +154,21 @@ async function extractPricesFromPage(browser, url) {
   const page = await browser.newPage();
 
   try {
+    // headless検知回避: User-Agent偽装 + navigator.webdriver上書き
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    );
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, "webdriver", { get: () => false });
+      // Chrome DevTools Protocol検知回避
+      window.chrome = { runtime: {}, loadTimes: () => {}, csi: () => {} };
+      // permissions API偽装
+      const originalQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (parameters) =>
+        parameters.name === "notifications"
+          ? Promise.resolve({ state: Notification.permission })
+          : originalQuery(parameters);
+    });
     await page.setViewport({ width: 1280, height: 1024 });
 
     // ページ遷移（domcontentloadedで初回待ち）
@@ -187,26 +209,58 @@ async function extractPricesFromPage(browser, url) {
     // 描画完了を待つ
     await sleep(3000);
 
-    // 全日disabledなら追加待機（SPAの遅延レンダリング対応）
+    // 全日disabledなら枚数セレクタ操作 + 追加待機（SPAの遅延レンダリング対応）
     let allDisabled = await page.evaluate(() => {
       const days = document.querySelectorAll("gds-calendar-day");
       return Array.from(days).every(d => d.getAttribute("data-disabled") === "true");
     });
     if (allDisabled) {
-      console.log("全日disabled — SPAレンダリング待機（追加10秒）");
-      // ページをスクロールして遅延読み込みを発火
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await sleep(5000);
-      await page.evaluate(() => window.scrollTo(0, 0));
-      await sleep(5000);
+      console.log("全日disabled — 枚数セレクタ操作を試行");
 
-      // 再チェック
-      allDisabled = await page.evaluate(() => {
-        const days = document.querySelectorAll("gds-calendar-day");
-        return Array.from(days).every(d => d.getAttribute("data-disabled") === "true");
-      });
+      // 枚数セレクタの「+」ボタンをクリック（数量1にする）
+      const quantityClicked = await tryClickQuantitySelector(page);
+      if (quantityClicked) {
+        console.log("枚数セレクタをクリック — カレンダー更新待機（8秒）");
+        await sleep(8000);
+
+        // 再チェック
+        allDisabled = await page.evaluate(() => {
+          const days = document.querySelectorAll("gds-calendar-day");
+          return Array.from(days).every(d => d.getAttribute("data-disabled") === "true");
+        });
+      }
+
       if (allDisabled) {
-        console.log("追加待機後も全日disabled — 販売日程なしと判定");
+        console.log("枚数セレクタ操作後も全日disabled — スクロール待機（追加10秒）");
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await sleep(5000);
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await sleep(5000);
+
+        // 再チェック
+        allDisabled = await page.evaluate(() => {
+          const days = document.querySelectorAll("gds-calendar-day");
+          return Array.from(days).every(d => d.getAttribute("data-disabled") === "true");
+        });
+        if (allDisabled) {
+          // デバッグ: ページ構造を出力
+          const debugInfo = await page.evaluate(() => {
+            const info = {};
+            info.title = document.title;
+            info.calendarDays = document.querySelectorAll("gds-calendar-day").length;
+            info.gdsQuantity = !!document.querySelector("gds-quantity");
+            info.buttons = document.querySelectorAll("button").length;
+            info.inputs = document.querySelectorAll("input").length;
+            // 主要コンテンツ領域の存在確認
+            info.mainContent = !!document.querySelector("main, [role='main'], .main-content");
+            info.bodyChildCount = document.body.children.length;
+            info.bodyTextLength = document.body.innerText.length;
+            // iframeの確認
+            info.iframes = document.querySelectorAll("iframe").length;
+            return info;
+          });
+          console.log("追加待機後も全日disabled — ページ構造:", JSON.stringify(debugInfo));
+        }
       }
     }
 
@@ -251,6 +305,53 @@ async function extractPricesFromPage(browser, url) {
     return result;
   } finally {
     await page.close();
+  }
+}
+
+/**
+ * 枚数セレクタの「+」ボタンをクリック（カレンダー有効化のため）
+ */
+async function tryClickQuantitySelector(page) {
+  try {
+    return await page.evaluate(() => {
+      // パターン1: gds-quantity コンポーネント内の+ボタン
+      const gdsQuantity = document.querySelector("gds-quantity");
+      if (gdsQuantity) {
+        const plusBtn = gdsQuantity.querySelector("button.plus, button[aria-label*='増'], button:last-child");
+        if (plusBtn && !plusBtn.disabled) {
+          plusBtn.click();
+          return true;
+        }
+      }
+
+      // パターン2: aria-labelに「枚数」「数量」を含むボタン
+      const buttons = document.querySelectorAll("button");
+      for (const btn of buttons) {
+        const label = (btn.getAttribute("aria-label") || "") + (btn.textContent || "");
+        if (/(\+|増|add|plus|increment)/i.test(label) || btn.textContent.trim() === "+") {
+          if (!btn.disabled) {
+            btn.click();
+            return true;
+          }
+        }
+      }
+
+      // パターン3: input[type="number"] の値を直接変更
+      const numInput = document.querySelector("input[type='number']");
+      if (numInput) {
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype, "value"
+        ).set;
+        nativeInputValueSetter.call(numInput, "1");
+        numInput.dispatchEvent(new Event("input", { bubbles: true }));
+        numInput.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      }
+
+      return false;
+    });
+  } catch {
+    return false;
   }
 }
 
