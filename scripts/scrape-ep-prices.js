@@ -172,6 +172,25 @@ async function extractPricesFromPage(browser, url) {
     // 描画完了を待つ
     await sleep(3000);
 
+    // 全日disabled（枚数未選択）の場合、枚数「+」ボタンをクリック
+    const allDisabled = await page.evaluate(() => {
+      const days = document.querySelectorAll("gds-calendar-day");
+      return Array.from(days).every(d => d.getAttribute("data-disabled") === "true");
+    });
+    if (allDisabled) {
+      console.log("全日disabled — 枚数選択を試行");
+      const clicked = await page.evaluate(() => {
+        // gds-quantity の「+」ボタンを探す
+        const plusBtn = document.querySelector("gds-quantity button.plus, gds-quantity button[aria-label*='増'], gds-quantity button:last-of-type");
+        if (plusBtn) { plusBtn.click(); return true; }
+        return false;
+      });
+      if (clicked) {
+        console.log("枚数+ボタンをクリック — カレンダー更新を待機");
+        await sleep(3000);
+      }
+    }
+
     // 現在表示中の月から価格を抽出
     const allPrices = new Map(); // 重複排除用: date → price
 
