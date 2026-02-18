@@ -243,7 +243,7 @@ async function extractPricesFromPage(browser, url) {
           return Array.from(days).every(d => d.getAttribute("data-disabled") === "true");
         });
         if (allDisabled) {
-          // デバッグ: ページ構造を出力
+          // デバッグ: ページ構造 + iframe詳細を出力
           const debugInfo = await page.evaluate(() => {
             const info = {};
             info.title = document.title;
@@ -251,15 +251,43 @@ async function extractPricesFromPage(browser, url) {
             info.gdsQuantity = !!document.querySelector("gds-quantity");
             info.buttons = document.querySelectorAll("button").length;
             info.inputs = document.querySelectorAll("input").length;
-            // 主要コンテンツ領域の存在確認
             info.mainContent = !!document.querySelector("main, [role='main'], .main-content");
-            info.bodyChildCount = document.body.children.length;
             info.bodyTextLength = document.body.innerText.length;
-            // iframeの確認
-            info.iframes = document.querySelectorAll("iframe").length;
+            // iframe詳細
+            const iframes = document.querySelectorAll("iframe");
+            info.iframes = [];
+            for (const iframe of iframes) {
+              const iframeInfo = {
+                src: iframe.src || "(empty)",
+                id: iframe.id || "(none)",
+                width: iframe.width,
+                height: iframe.height,
+              };
+              try {
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                iframeInfo.hasContent = !!iframeDoc;
+                iframeInfo.bodyLength = iframeDoc ? iframeDoc.body.innerText.length : 0;
+                iframeInfo.calendarDays = iframeDoc ? iframeDoc.querySelectorAll("gds-calendar-day").length : 0;
+              } catch {
+                iframeInfo.crossOrigin = true;
+              }
+              info.iframes.push(iframeInfo);
+            }
+            // ボタンテキスト一覧（最初の20個）
+            const btns = document.querySelectorAll("button");
+            info.buttonTexts = Array.from(btns).slice(0, 20).map(b =>
+              (b.textContent || "").trim().substring(0, 40)
+            );
             return info;
           });
-          console.log("追加待機後も全日disabled — ページ構造:", JSON.stringify(debugInfo));
+          console.log("追加待機後も全日disabled — 詳細:", JSON.stringify(debugInfo));
+
+          // iframe内のカレンダーを探す
+          const iframePrices = await extractPricesFromIframes(page);
+          if (iframePrices.length > 0) {
+            console.log(`iframe内から${iframePrices.length}件の価格を検出`);
+            return iframePrices;
+          }
         }
       }
     }
@@ -305,6 +333,64 @@ async function extractPricesFromPage(browser, url) {
     return result;
   } finally {
     await page.close();
+  }
+}
+
+/**
+ * iframe内のカレンダーから価格を抽出
+ */
+async function extractPricesFromIframes(page) {
+  try {
+    const frames = page.frames();
+    console.log(`  iframe数: ${frames.length}（メインフレーム含む）`);
+
+    for (let i = 0; i < frames.length; i++) {
+      const frame = frames[i];
+      if (frame === page.mainFrame()) continue;
+
+      try {
+        const frameUrl = frame.url();
+        console.log(`  iframe[${i}]: ${frameUrl.substring(0, 80)}`);
+
+        const calendarDays = await frame.evaluate(() => {
+          return document.querySelectorAll("gds-calendar-day").length;
+        }).catch(() => 0);
+
+        if (calendarDays > 0) {
+          console.log(`  iframe[${i}]にカレンダー要素${calendarDays}個を検出`);
+
+          const prices = await frame.evaluate(() => {
+            const result = [];
+            const days = document.querySelectorAll("gds-calendar-day");
+            for (const day of days) {
+              if (day.getAttribute("data-disabled") === "true") continue;
+              const dataDate = day.getAttribute("data-date");
+              if (!dataDate) continue;
+              const button = day.querySelector("button[aria-label]");
+              if (!button) continue;
+              const ariaLabel = button.getAttribute("aria-label");
+              if (!ariaLabel) continue;
+              const priceMatch = ariaLabel.match(/\s-\s(\d+)$/);
+              if (!priceMatch) continue;
+              const price = parseInt(priceMatch[1], 10);
+              if (price < 5000 || price > 100000) continue;
+              const parts = dataDate.split("-");
+              if (parts.length !== 3) continue;
+              const dateStr = `${parts[2]}-${parts[0]}-${parts[1]}`;
+              result.push({ date: dateStr, price: price });
+            }
+            return result;
+          });
+
+          if (prices.length > 0) return prices;
+        }
+      } catch {
+        // cross-origin iframe — skip
+      }
+    }
+    return [];
+  } catch {
+    return [];
   }
 }
 
