@@ -244,43 +244,36 @@ async function extractPricesFromPage(browser, url) {
       failedRequests.forEach((r, i) => console.log(`    [${i}] ${r}`));
     }
 
-    // ページ構造のダンプ（動作パスとの比較用）
-    const pageStructure = await page.evaluate(() => {
-      const info = {};
-      // bodyの直下のカスタム要素タグ名（Angularコンポーネント）
-      info.bodyChildren = Array.from(document.body.children)
-        .filter(el => el.tagName.includes("-") || ["MAIN", "APP-ROOT", "GDS"].some(t => el.tagName.includes(t)))
-        .map(el => el.tagName.toLowerCase())
-        .slice(0, 20);
-      // app-root配下のコンポーネント（1-2階層）
-      const appRoot = document.querySelector("app-root, gds-app");
-      if (appRoot) {
-        info.appRootChildren = Array.from(appRoot.querySelectorAll("*"))
-          .filter(el => el.tagName.includes("-"))
-          .map(el => el.tagName.toLowerCase())
-          .filter((v, i, a) => a.indexOf(v) === i) // unique
-          .slice(0, 50);
+    // gds-calendar-day の詳細ダンプ（最初の5個: disabled/enabled両方）
+    const calendarDebug = await page.evaluate(() => {
+      const days = document.querySelectorAll("gds-calendar-day");
+      const enabled = [];
+      const disabled = [];
+      for (const day of days) {
+        const isDisabled = day.getAttribute("data-disabled") === "true";
+        const info = {
+          date: day.getAttribute("data-date"),
+          disabled: isDisabled,
+          html: day.innerHTML.substring(0, 200),
+        };
+        if (isDisabled) { disabled.push(info); }
+        else { enabled.push(info); }
       }
-      // カレンダー周辺のHTML構造
-      const calendar = document.querySelector("gds-calendar, gds-multi-day-calendar, [class*='calendar']");
-      if (calendar) {
-        info.calendarParent = calendar.parentElement ? calendar.parentElement.tagName.toLowerCase() : "(none)";
-        info.calendarSiblings = Array.from(calendar.parentElement ? calendar.parentElement.children : [])
-          .map(el => `${el.tagName.toLowerCase()}${el.className ? '.' + el.className.split(' ')[0] : ''}`)
-          .slice(0, 10);
-      }
-      // gds-quantity の有無と周辺
-      const quantity = document.querySelector("gds-quantity");
-      info.hasQuantity = !!quantity;
-      if (quantity) {
-        info.quantityParent = quantity.parentElement.tagName.toLowerCase();
-      }
-      // bodyTextの最初の500文字（コンテンツの有無判定）
-      info.bodyTextPreview = document.body.innerText.substring(0, 500).replace(/\n+/g, " | ");
-      info.bodyTextLength = document.body.innerText.length;
-      return info;
+      return {
+        total: days.length,
+        enabledCount: enabled.length,
+        disabledCount: disabled.length,
+        enabledSample: enabled.slice(0, 3),
+        disabledSample: disabled.slice(0, 3),
+      };
     });
-    console.log(`  構造: ${JSON.stringify(pageStructure)}`);
+    console.log(`  calendar: total=${calendarDebug.total} enabled=${calendarDebug.enabledCount} disabled=${calendarDebug.disabledCount}`);
+    if (calendarDebug.enabledCount > 0) {
+      console.log(`  enabled例: ${JSON.stringify(calendarDebug.enabledSample[0])}`);
+    }
+    if (calendarDebug.disabledCount > 0) {
+      console.log(`  disabled例: ${JSON.stringify(calendarDebug.disabledSample[0])}`);
+    }
 
     // 全日disabledなら枚数セレクタ操作 + 追加待機（SPAの遅延レンダリング対応）
     let allDisabled = await page.evaluate(() => {
