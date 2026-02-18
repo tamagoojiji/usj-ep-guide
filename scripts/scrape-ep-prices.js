@@ -184,12 +184,19 @@ async function extractPricesFromPage(browser, url) {
 
     // store.usj / api-usj ドメインへのXHR/fetchリクエストを記録
     const apiCalls = [];
+    const failedRequests = [];
     page.on("request", (req) => {
       const reqUrl = req.url();
       const resType = req.resourceType();
       if ((resType === "xhr" || resType === "fetch") &&
           (reqUrl.includes("store.usj") || reqUrl.includes("api-usj") || reqUrl.includes("universalparks"))) {
         apiCalls.push(reqUrl.substring(0, 120));
+      }
+    });
+    // HTTPエラーレスポンスをキャプチャ
+    page.on("response", (resp) => {
+      if (resp.status() >= 400) {
+        failedRequests.push(`${resp.status()} ${resp.url().substring(0, 150)}`);
       }
     });
 
@@ -231,13 +238,32 @@ async function extractPricesFromPage(browser, url) {
     // 描画完了を待つ
     await sleep(3000);
 
-    // APIコールログ出力（全パス共通: 動作パスとの比較用）
-    if (apiCalls.length > 0) {
-      console.log(`  XHR/fetchリクエスト (${apiCalls.length}件):`);
-      apiCalls.forEach((u, i) => console.log(`    [${i}] ${u}`));
-    } else {
-      console.log("  XHR/fetchリクエスト: 0件");
+    // HTTPエラーログ出力（全パス共通）
+    if (failedRequests.length > 0) {
+      console.log(`  HTTPエラー (${failedRequests.length}件):`);
+      failedRequests.forEach((r, i) => console.log(`    [${i}] ${r}`));
     }
+
+    // SSR埋め込みデータの有無チェック
+    const ssrInfo = await page.evaluate(() => {
+      // Angular Transfer State (SSR embedded data)
+      const transferStateScript = document.querySelector("script#serverApp-state, script[type='application/json'][id*='state']");
+      // __INITIAL_STATE__ などの埋め込みデータ
+      const scripts = document.querySelectorAll("script:not([src])");
+      let hasTransferState = !!transferStateScript;
+      let transferStateLength = transferStateScript ? transferStateScript.textContent.length : 0;
+      let inlineScriptCount = scripts.length;
+      let largestInlineScript = 0;
+      let largestInlineScriptPreview = "";
+      for (const s of scripts) {
+        if (s.textContent.length > largestInlineScript) {
+          largestInlineScript = s.textContent.length;
+          largestInlineScriptPreview = s.textContent.substring(0, 100);
+        }
+      }
+      return { hasTransferState, transferStateLength, inlineScriptCount, largestInlineScript, largestInlineScriptPreview };
+    });
+    console.log(`  SSR: transferState=${ssrInfo.hasTransferState}(${ssrInfo.transferStateLength}), inlineScripts=${ssrInfo.inlineScriptCount}, largest=${ssrInfo.largestInlineScript}`);
 
     // 全日disabledなら枚数セレクタ操作 + 追加待機（SPAの遅延レンダリング対応）
     let allDisabled = await page.evaluate(() => {
