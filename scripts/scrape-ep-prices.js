@@ -179,15 +179,56 @@ async function extractPricesFromPage(browser, url) {
     });
     if (allDisabled) {
       console.log("全日disabled — 枚数選択を試行");
+      // デバッグ: 枚数関連のHTML構造を確認
+      const qtyDebug = await page.evaluate(() => {
+        // gds-quantity要素を探す
+        const qty = document.querySelector("gds-quantity");
+        if (qty) return { found: "gds-quantity", html: qty.innerHTML.substring(0, 500) };
+        // 汎用的にbuttonを探す
+        const buttons = document.querySelectorAll("button");
+        const btnInfo = [];
+        for (const b of buttons) {
+          const text = b.textContent.trim().substring(0, 50);
+          const aria = b.getAttribute("aria-label") || "";
+          const cls = b.className.substring(0, 80);
+          if (text === "+" || text === "＋" || aria.includes("増") || aria.includes("add") || aria.includes("plus") || aria.includes("increment")) {
+            btnInfo.push({ text, aria, cls, tag: b.parentElement ? b.parentElement.tagName : "" });
+          }
+        }
+        return { found: "buttons", plusCandidates: btnInfo.slice(0, 5) };
+      });
+      console.log(`デバッグ枚数: ${JSON.stringify(qtyDebug)}`);
+
       const clicked = await page.evaluate(() => {
-        // gds-quantity の「+」ボタンを探す
-        const plusBtn = document.querySelector("gds-quantity button.plus, gds-quantity button[aria-label*='増'], gds-quantity button:last-of-type");
-        if (plusBtn) { plusBtn.click(); return true; }
-        return false;
+        // 広範囲にplusボタンを探す
+        const selectors = [
+          "gds-quantity button.plus",
+          "gds-quantity button[aria-label*='増']",
+          "gds-quantity button:last-of-type",
+          "button[aria-label*='increment']",
+          "button[aria-label*='Increment']",
+          "button[aria-label*='add']",
+          "button[aria-label*='plus']",
+        ];
+        for (const sel of selectors) {
+          const btn = document.querySelector(sel);
+          if (btn) { btn.click(); return sel; }
+        }
+        // テキストが "+" のボタンをフォールバック
+        const allBtns = document.querySelectorAll("button");
+        for (const b of allBtns) {
+          if (b.textContent.trim() === "+" || b.textContent.trim() === "＋") {
+            b.click();
+            return "text:+";
+          }
+        }
+        return null;
       });
       if (clicked) {
-        console.log("枚数+ボタンをクリック — カレンダー更新を待機");
+        console.log(`枚数ボタンクリック成功（${clicked}） — カレンダー更新を待機`);
         await sleep(3000);
+      } else {
+        console.log("枚数ボタンが見つかりません");
       }
     }
 
