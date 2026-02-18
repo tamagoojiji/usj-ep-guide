@@ -178,58 +178,60 @@ async function extractPricesFromPage(browser, url) {
       return Array.from(days).every(d => d.getAttribute("data-disabled") === "true");
     });
     if (allDisabled) {
-      console.log("全日disabled — 枚数選択を試行");
-      // デバッグ: 枚数関連のHTML構造を確認
-      const qtyDebug = await page.evaluate(() => {
-        // gds-quantity要素を探す
-        const qty = document.querySelector("gds-quantity");
-        if (qty) return { found: "gds-quantity", html: qty.innerHTML.substring(0, 500) };
-        // 汎用的にbuttonを探す
+      console.log("全日disabled — ページ構造を調査");
+      const pageDebug = await page.evaluate(() => {
+        // カスタム要素（ハイフン含むタグ）を全取得
+        const allEls = document.querySelectorAll("*");
+        const customTags = new Set();
+        for (const el of allEls) {
+          if (el.tagName.includes("-")) customTags.add(el.tagName.toLowerCase());
+        }
+        // 全button要素（shadow DOM外）
         const buttons = document.querySelectorAll("button");
-        const btnInfo = [];
+        const btnList = [];
         for (const b of buttons) {
-          const text = b.textContent.trim().substring(0, 50);
-          const aria = b.getAttribute("aria-label") || "";
-          const cls = b.className.substring(0, 80);
-          if (text === "+" || text === "＋" || aria.includes("増") || aria.includes("add") || aria.includes("plus") || aria.includes("increment")) {
-            btnInfo.push({ text, aria, cls, tag: b.parentElement ? b.parentElement.tagName : "" });
+          btnList.push({
+            text: b.textContent.trim().substring(0, 30),
+            aria: (b.getAttribute("aria-label") || "").substring(0, 50),
+            cls: b.className.substring(0, 50),
+            parent: b.parentElement ? b.parentElement.tagName.toLowerCase() : ""
+          });
+        }
+        // input要素
+        const inputs = document.querySelectorAll("input");
+        const inputList = [];
+        for (const inp of inputs) {
+          inputList.push({
+            type: inp.type, name: inp.name, value: inp.value,
+            aria: (inp.getAttribute("aria-label") || "").substring(0, 50)
+          });
+        }
+        // Shadow DOM持ちのカスタム要素のshadow内ボタンを探索
+        const shadowBtns = [];
+        for (const el of allEls) {
+          if (el.shadowRoot) {
+            const sBtns = el.shadowRoot.querySelectorAll("button");
+            for (const sb of sBtns) {
+              shadowBtns.push({
+                hostTag: el.tagName.toLowerCase(),
+                text: sb.textContent.trim().substring(0, 30),
+                aria: (sb.getAttribute("aria-label") || "").substring(0, 50),
+                cls: sb.className.substring(0, 50)
+              });
+            }
           }
         }
-        return { found: "buttons", plusCandidates: btnInfo.slice(0, 5) };
+        return {
+          customTags: Array.from(customTags).slice(0, 30),
+          buttons: btnList.slice(0, 15),
+          inputs: inputList.slice(0, 10),
+          shadowButtons: shadowBtns.slice(0, 15)
+        };
       });
-      console.log(`デバッグ枚数: ${JSON.stringify(qtyDebug)}`);
-
-      const clicked = await page.evaluate(() => {
-        // 広範囲にplusボタンを探す
-        const selectors = [
-          "gds-quantity button.plus",
-          "gds-quantity button[aria-label*='増']",
-          "gds-quantity button:last-of-type",
-          "button[aria-label*='increment']",
-          "button[aria-label*='Increment']",
-          "button[aria-label*='add']",
-          "button[aria-label*='plus']",
-        ];
-        for (const sel of selectors) {
-          const btn = document.querySelector(sel);
-          if (btn) { btn.click(); return sel; }
-        }
-        // テキストが "+" のボタンをフォールバック
-        const allBtns = document.querySelectorAll("button");
-        for (const b of allBtns) {
-          if (b.textContent.trim() === "+" || b.textContent.trim() === "＋") {
-            b.click();
-            return "text:+";
-          }
-        }
-        return null;
-      });
-      if (clicked) {
-        console.log(`枚数ボタンクリック成功（${clicked}） — カレンダー更新を待機`);
-        await sleep(3000);
-      } else {
-        console.log("枚数ボタンが見つかりません");
-      }
+      console.log(`カスタム要素: ${JSON.stringify(pageDebug.customTags)}`);
+      console.log(`ボタン一覧: ${JSON.stringify(pageDebug.buttons)}`);
+      console.log(`input一覧: ${JSON.stringify(pageDebug.inputs)}`);
+      console.log(`Shadow内ボタン: ${JSON.stringify(pageDebug.shadowButtons)}`);
     }
 
     // 現在表示中の月から価格を抽出
