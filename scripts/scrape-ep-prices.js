@@ -18,7 +18,7 @@ const puppeteer = require("puppeteer");
 // パス定義: GAS「スクレイピングURL」シートから動的に取得
 let PASS_PAGES = []; // fetchPassPages() で初期化
 
-const WAIT_BETWEEN_PAGES_MS = 5000; // Gemini不使用のため短縮
+const WAIT_BETWEEN_PAGES_MS = 5000;
 const PAGE_LOAD_TIMEOUT_MS = 60000;
 const QUEUE_IT_TIMEOUT_MS = 120000;
 const MAX_MONTH_NAVIGATIONS = 5; // 最大月送り回数
@@ -44,6 +44,17 @@ async function fetchPassPages(gasUrl) {
 
   console.log(`URL一覧取得完了: ${data.active}件 / 全${data.total}件`);
   return data.urls; // [{passId, label, url}, ...]
+}
+
+/**
+ * URLに ?config=true がなければ自動付与
+ */
+function ensureConfigParam(url) {
+  if (!url.includes("config=true")) {
+    const separator = url.includes("?") ? "&" : "?";
+    return url + separator + "config=true";
+  }
+  return url;
 }
 
 async function main() {
@@ -77,11 +88,11 @@ async function main() {
     console.log(`\n--- ${pass.label} (${pass.passId}) ---`);
 
     try {
-      const prices = await extractPricesFromPage(browser, pass.url);
+      const url = ensureConfigParam(pass.url);
+      const prices = await extractPricesFromPage(browser, url);
       console.log(`価格抽出完了: ${prices.length}件`);
 
       if (prices.length === 0) {
-        // 売り切れ・販売期間外の場合は警告のみ（エラーにしない）
         console.log(`スキップ (${pass.passId}): 販売中の日程なし（売り切れまたは販売期間外）`);
         results.push({ passId: pass.passId, success: true, skipped: true });
         continue;
@@ -131,9 +142,6 @@ async function main() {
 
 /**
  * ページを開いてカレンダーDOMから価格を直接抽出（複数月対応）
- * @param {Browser} browser - Puppeteerブラウザインスタンス
- * @param {string} url - 価格ページURL
- * @return {Array<{date: string, price: number}>} 抽出された価格データ
  */
 async function extractPricesFromPage(browser, url) {
   const page = await browser.newPage();
@@ -141,7 +149,7 @@ async function extractPricesFromPage(browser, url) {
   try {
     await page.setViewport({ width: 1280, height: 1024 });
 
-    // ページ遷移
+    // ページ遷移（domcontentloadedで初回待ち）
     console.log(`ページ遷移: ${url}`);
     const response = await page.goto(url, {
       waitUntil: "domcontentloaded",
@@ -161,6 +169,13 @@ async function extractPricesFromPage(browser, url) {
       throw new Error(`HTTPエラー: ${response.status()}`);
     }
 
+    // SPAの完全描画を待つ（networkidleでJSの非同期ロード完了を確認）
+    try {
+      await page.waitForNetworkIdle({ idleTime: 2000, timeout: 20000 });
+    } catch {
+      // タイムアウトしても続行（ネットワークが完全に止まらないサイトもある）
+    }
+
     // カレンダー要素の表示を待つ
     try {
       await page.waitForSelector("gds-calendar-day", { timeout: 30000 });
@@ -172,72 +187,33 @@ async function extractPricesFromPage(browser, url) {
     // 描画完了を待つ
     await sleep(3000);
 
-    // 全日disabled（枚数未選択）の場合、枚数「+」ボタンをクリック
-    const allDisabled = await page.evaluate(() => {
+    // 全日disabledなら追加待機（SPAの遅延レンダリング対応）
+    let allDisabled = await page.evaluate(() => {
       const days = document.querySelectorAll("gds-calendar-day");
       return Array.from(days).every(d => d.getAttribute("data-disabled") === "true");
     });
     if (allDisabled) {
-      console.log("全日disabled — ページ構造を調査");
-      const pageDebug = await page.evaluate(() => {
-        // カスタム要素（ハイフン含むタグ）を全取得
-        const allEls = document.querySelectorAll("*");
-        const customTags = new Set();
-        for (const el of allEls) {
-          if (el.tagName.includes("-")) customTags.add(el.tagName.toLowerCase());
-        }
-        // 全button要素（shadow DOM外）
-        const buttons = document.querySelectorAll("button");
-        const btnList = [];
-        for (const b of buttons) {
-          btnList.push({
-            text: b.textContent.trim().substring(0, 30),
-            aria: (b.getAttribute("aria-label") || "").substring(0, 50),
-            cls: b.className.substring(0, 50),
-            parent: b.parentElement ? b.parentElement.tagName.toLowerCase() : ""
-          });
-        }
-        // input要素
-        const inputs = document.querySelectorAll("input");
-        const inputList = [];
-        for (const inp of inputs) {
-          inputList.push({
-            type: inp.type, name: inp.name, value: inp.value,
-            aria: (inp.getAttribute("aria-label") || "").substring(0, 50)
-          });
-        }
-        // Shadow DOM持ちのカスタム要素のshadow内ボタンを探索
-        const shadowBtns = [];
-        for (const el of allEls) {
-          if (el.shadowRoot) {
-            const sBtns = el.shadowRoot.querySelectorAll("button");
-            for (const sb of sBtns) {
-              shadowBtns.push({
-                hostTag: el.tagName.toLowerCase(),
-                text: sb.textContent.trim().substring(0, 30),
-                aria: (sb.getAttribute("aria-label") || "").substring(0, 50),
-                cls: sb.className.substring(0, 50)
-              });
-            }
-          }
-        }
-        return {
-          customTags: Array.from(customTags).slice(0, 30),
-          buttons: btnList.slice(0, 15),
-          inputs: inputList.slice(0, 10),
-          shadowButtons: shadowBtns.slice(0, 15)
-        };
+      console.log("全日disabled — SPAレンダリング待機（追加10秒）");
+      // ページをスクロールして遅延読み込みを発火
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await sleep(5000);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await sleep(5000);
+
+      // 再チェック
+      allDisabled = await page.evaluate(() => {
+        const days = document.querySelectorAll("gds-calendar-day");
+        return Array.from(days).every(d => d.getAttribute("data-disabled") === "true");
       });
-      console.log(`カスタム要素: ${JSON.stringify(pageDebug.customTags)}`);
-      console.log(`ボタン一覧: ${JSON.stringify(pageDebug.buttons)}`);
-      console.log(`input一覧: ${JSON.stringify(pageDebug.inputs)}`);
-      console.log(`Shadow内ボタン: ${JSON.stringify(pageDebug.shadowButtons)}`);
+      if (allDisabled) {
+        console.log("追加待機後も全日disabled — 販売日程なしと判定");
+      }
     }
 
     // 現在表示中の月から価格を抽出
-    const allPrices = new Map(); // 重複排除用: date → price
+    const allPrices = new Map();
 
-    let consecutiveEmpty = 0; // 連続で0件の月数
+    let consecutiveEmpty = 0;
 
     for (let nav = 0; nav <= MAX_MONTH_NAVIGATIONS; nav++) {
       const monthPrices = await extractCurrentMonthPrices(page);
@@ -245,7 +221,6 @@ async function extractPricesFromPage(browser, url) {
 
       if (monthPrices.length === 0) {
         consecutiveEmpty++;
-        // 価格のある月を過ぎた後に2回連続で0件なら終了
         if (consecutiveEmpty >= 2 && allPrices.size > 0) {
           console.log("  価格付き日付なし（連続2回） — 抽出終了");
           break;
@@ -258,21 +233,17 @@ async function extractPricesFromPage(browser, url) {
         allPrices.set(item.date, item.price);
       }
 
-      // 最後の月なら次へ進まない
       if (nav === MAX_MONTH_NAVIGATIONS) break;
 
-      // 右矢印ボタンで次の月へ
       const navigated = await navigateToNextMonth(page);
       if (!navigated) {
         console.log("  次の月への移動不可 — 抽出終了");
         break;
       }
 
-      // 月送り後の描画待ち
       await sleep(2000);
     }
 
-    // Map → 配列に変換してソート
     const result = Array.from(allPrices.entries())
       .map(([date, price]) => ({ date, price }))
       .sort((a, b) => a.date.localeCompare(b.date));
@@ -285,8 +256,6 @@ async function extractPricesFromPage(browser, url) {
 
 /**
  * 現在表示中のカレンダーから価格を抽出
- * @param {Page} page - Puppeteerページ
- * @return {Array<{date: string, price: number}>}
  */
 async function extractCurrentMonthPrices(page) {
   return await page.evaluate(() => {
@@ -294,7 +263,6 @@ async function extractCurrentMonthPrices(page) {
     const days = document.querySelectorAll("gds-calendar-day");
 
     for (const day of days) {
-      // 無効（過去日/非販売日）はスキップ
       if (day.getAttribute("data-disabled") === "true") continue;
 
       const dataDate = day.getAttribute("data-date");
@@ -328,13 +296,10 @@ async function extractCurrentMonthPrices(page) {
 
 /**
  * 右矢印ボタンで次の月に移動
- * @param {Page} page - Puppeteerページ
- * @return {boolean} 移動できたかどうか
  */
 async function navigateToNextMonth(page) {
   try {
     const clicked = await page.evaluate(() => {
-      // gds-buttons.right-arrow 内の button を探す
       const rightArrow = document.querySelector("gds-buttons.right-arrow button");
       if (rightArrow && !rightArrow.disabled) {
         rightArrow.click();
