@@ -175,6 +175,27 @@ async function takeScreenshot(browser, url, outputPath) {
     // 追加の描画待ち（JS描画の完了を待つ）
     await sleep(5000);
 
+    // ページ下までスクロールして遅延読み込みコンテンツを発火
+    console.log("ページ全体をスクロール中...");
+    await page.evaluate(async () => {
+      await new Promise((resolve) => {
+        let totalHeight = 0;
+        const distance = 500;
+        const timer = setInterval(() => {
+          window.scrollBy(0, distance);
+          totalHeight += distance;
+          if (totalHeight >= document.body.scrollHeight) {
+            clearInterval(timer);
+            resolve();
+          }
+        }, 300);
+      });
+    });
+    // トップに戻してからフルページスクショ
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await sleep(3000);
+    console.log("スクロール完了 — スクショ取得");
+
     // フルページスクショ
     await page.screenshot({
       path: outputPath,
