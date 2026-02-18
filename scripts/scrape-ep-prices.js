@@ -161,22 +161,53 @@ async function extractPricesFromPage(browser, url) {
     // 描画完了を待つ
     await sleep(3000);
 
-    // デバッグ: 最初の5要素のDOM属性をログ出力
+    // デバッグ: 非disabled要素の属性 + Shadow DOM内容を確認
     const debugInfo = await page.evaluate(() => {
       const days = document.querySelectorAll("gds-calendar-day");
-      const info = [];
-      for (let i = 0; i < Math.min(days.length, 5); i++) {
-        const d = days[i];
+      const enabled = [];
+      const disabled = [];
+      for (const d of days) {
+        if (d.getAttribute("data-disabled") === "true") {
+          disabled.push(d.getAttribute("data-date"));
+        } else {
+          enabled.push(d.getAttribute("data-date"));
+        }
+      }
+      // 非disabled要素の詳細（最大3件）
+      const samples = [];
+      for (const d of days) {
+        if (d.getAttribute("data-disabled") === "true") continue;
+        if (samples.length >= 3) break;
         const attrs = {};
         for (const attr of d.attributes) {
-          attrs[attr.name] = attr.value.substring(0, 100);
+          attrs[attr.name] = attr.value.substring(0, 200);
         }
-        info.push(attrs);
+        const shadowHtml = d.shadowRoot ? d.shadowRoot.innerHTML.substring(0, 500) : "NO_SHADOW_ROOT";
+        const innerHtml = d.innerHTML.substring(0, 300);
+        const textContent = d.textContent.substring(0, 200);
+        samples.push({ attrs, shadowHtml, innerHtml, textContent });
       }
-      return { total: days.length, samples: info };
+      // disabled要素もShadow DOM確認（最初の1件）
+      let disabledSample = null;
+      for (const d of days) {
+        if (d.getAttribute("data-disabled") === "true") {
+          disabledSample = {
+            attrs: {},
+            shadowHtml: d.shadowRoot ? d.shadowRoot.innerHTML.substring(0, 500) : "NO_SHADOW_ROOT",
+            textContent: d.textContent.substring(0, 200)
+          };
+          for (const attr of d.attributes) {
+            disabledSample.attrs[attr.name] = attr.value.substring(0, 200);
+          }
+          break;
+        }
+      }
+      return { total: days.length, enabledCount: enabled.length, disabledCount: disabled.length, enabledDates: enabled.slice(0, 5), samples, disabledSample };
     });
-    console.log(`デバッグ: gds-calendar-day 要素数=${debugInfo.total}`);
-    console.log(`デバッグ: 属性サンプル=${JSON.stringify(debugInfo.samples, null, 2)}`);
+    console.log(`デバッグ: 要素数=${debugInfo.total}, 有効=${debugInfo.enabledCount}, 無効=${debugInfo.disabledCount}`);
+    console.log(`デバッグ: 有効日付(先頭5)=${JSON.stringify(debugInfo.enabledDates)}`);
+    console.log(`デバッグ: 有効要素サンプル=${JSON.stringify(debugInfo.samples, null, 2)}`);
+    console.log(`デバッグ: 無効要素サンプル=${JSON.stringify(debugInfo.disabledSample, null, 2)}`);
 
     // 現在表示中の月から価格を抽出
     const allPrices = new Map(); // 重複排除用: date → price
