@@ -161,6 +161,23 @@ async function extractPricesFromPage(browser, url) {
     // 描画完了を待つ
     await sleep(3000);
 
+    // デバッグ: 最初の5要素のDOM属性をログ出力
+    const debugInfo = await page.evaluate(() => {
+      const days = document.querySelectorAll("gds-calendar-day");
+      const info = [];
+      for (let i = 0; i < Math.min(days.length, 5); i++) {
+        const d = days[i];
+        const attrs = {};
+        for (const attr of d.attributes) {
+          attrs[attr.name] = attr.value.substring(0, 100);
+        }
+        info.push(attrs);
+      }
+      return { total: days.length, samples: info };
+    });
+    console.log(`デバッグ: gds-calendar-day 要素数=${debugInfo.total}`);
+    console.log(`デバッグ: 属性サンプル=${JSON.stringify(debugInfo.samples, null, 2)}`);
+
     // 現在表示中の月から価格を抽出
     const allPrices = new Map(); // 重複排除用: date → price
 
