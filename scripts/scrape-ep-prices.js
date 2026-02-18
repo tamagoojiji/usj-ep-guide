@@ -244,6 +244,12 @@ async function extractPricesFromPage(browser, url) {
       failedRequests.forEach((r, i) => console.log(`    [${i}] ${r}`));
     }
 
+    // 生HTMLフェッチ（全パス共通: SSR vs CSR比較）
+    const rawHtmlCheck = await fetchRawHtml(url);
+    const rawPriceCount = (rawHtmlCheck.match(/aria-label="[^"]*\s-\s\d{4,6}"/g) || []).length;
+    const rawDisabledCount = (rawHtmlCheck.match(/data-disabled="true"/g) || []).length;
+    console.log(`  生HTML(SSR): 価格付き=${rawPriceCount}, disabled=${rawDisabledCount}, 全長=${rawHtmlCheck.length}`);
+
     // gds-calendar-day の詳細ダンプ（最初の5個: disabled/enabled両方）
     const calendarDebug = await page.evaluate(() => {
       const days = document.querySelectorAll("gds-calendar-day");
@@ -359,28 +365,16 @@ async function extractPricesFromPage(browser, url) {
             return iframePrices;
           }
 
-          // URLパラメータを変えて再試行
-          console.log("URLパラメータ変更で再試行");
-          const currentPageUrl = page.url();
-          const urlVariants = [
-            currentPageUrl + "&quantity=1",
-            currentPageUrl + "&adults=1",
-            currentPageUrl.replace("?config=true", ""),
-          ];
-          for (const variantUrl of urlVariants) {
-            console.log(`  試行: ${variantUrl.substring(0, 100)}`);
-            await page.goto(variantUrl, { waitUntil: "domcontentloaded", timeout: PAGE_LOAD_TIMEOUT_MS });
-            try { await page.waitForNetworkIdle({ idleTime: 2000, timeout: 15000 }); } catch {}
-            await sleep(3000);
-            const variantEnabled = await page.evaluate(() => {
-              const days = document.querySelectorAll("gds-calendar-day");
-              return Array.from(days).filter(d => d.getAttribute("data-disabled") !== "true").length;
-            });
-            console.log(`  enabled日数: ${variantEnabled}`);
-            if (variantEnabled > 0) {
-              console.log(`  URLバリアント成功! enabled=${variantEnabled}`);
-              break;
-            }
+          // 生HTMLを直接fetchして比較（Puppeteerレンダリング問題の切り分け）
+          console.log("生HTMLフェッチで価格データ確認");
+          const rawHtml = await fetchRawHtml(page.url());
+          // aria-labelに価格が含まれるか
+          const priceMatches = rawHtml.match(/aria-label="[^"]*\s-\s\d{4,6}"/g) || [];
+          const disabledMatches = rawHtml.match(/data-disabled="true"/g) || [];
+          const enabledMatches = rawHtml.match(/data-disabled="false"/g) || [];
+          console.log(`  生HTML: 価格付きaria-label=${priceMatches.length}, disabled=${disabledMatches.length}, enabled=${enabledMatches.length}`);
+          if (priceMatches.length > 0) {
+            console.log(`  生HTML価格例: ${priceMatches[0]}`);
           }
         }
       }
@@ -754,6 +748,25 @@ async function postToGas(gasUrl, apiKey, passId, prices) {
   }
 
   return await response.json();
+}
+
+/**
+ * URLの生HTMLを直接fetch（ブラウザレンダリングなし）
+ */
+async function fetchRawHtml(url) {
+  try {
+    const resp = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+      },
+      redirect: "follow",
+    });
+    return await resp.text();
+  } catch {
+    return "";
+  }
 }
 
 function sleep(ms) {
