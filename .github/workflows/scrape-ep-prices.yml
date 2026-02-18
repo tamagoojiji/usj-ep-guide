@@ -31,11 +31,3 @@ jobs:
           GAS_WEB_APP_URL: ${{ secrets.GAS_WEB_APP_URL }}
           GAS_API_KEY: ${{ secrets.GAS_API_KEY }}
         run: node scrape-ep-prices.js
-
-      - name: スクショをArtifactsに保存
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ep-price-screenshots-${{ github.run_number }}
-          path: scripts/screenshots/
-          retention-days: 30

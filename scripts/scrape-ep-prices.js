@@ -81,7 +81,10 @@ async function main() {
       console.log(`価格抽出完了: ${prices.length}件`);
 
       if (prices.length === 0) {
-        throw new Error("価格データが見つかりませんでした");
+        // 売り切れ・販売期間外の場合は警告のみ（エラーにしない）
+        console.log(`スキップ (${pass.passId}): 販売中の日程なし（売り切れまたは販売期間外）`);
+        results.push({ passId: pass.passId, success: true, skipped: true });
+        continue;
       }
 
       // GAS APIにPOST
@@ -105,9 +108,17 @@ async function main() {
 
   // 結果サマリー
   console.log("\n=== 結果サマリー ===");
-  const succeeded = results.filter((r) => r.success).length;
+  const succeeded = results.filter((r) => r.success && !r.skipped).length;
+  const skipped = results.filter((r) => r.skipped).length;
   const failed = results.filter((r) => !r.success).length;
-  console.log(`成功: ${succeeded} / 失敗: ${failed} / 合計: ${results.length}`);
+  console.log(`成功: ${succeeded} / スキップ: ${skipped} / 失敗: ${failed} / 合計: ${results.length}`);
+
+  if (skipped > 0) {
+    console.log("\nスキップしたパス（販売中の日程なし）:");
+    results
+      .filter((r) => r.skipped)
+      .forEach((r) => console.log(`  - ${r.passId}`));
+  }
 
   if (failed > 0) {
     console.log("\n失敗したパス:");
@@ -160,32 +171,6 @@ async function extractPricesFromPage(browser, url) {
 
     // 描画完了を待つ
     await sleep(3000);
-
-    // デバッグ: 非disabled要素の内部構造を確認（1回目の月のみ）
-    const debugSample = await page.evaluate(() => {
-      const days = document.querySelectorAll("gds-calendar-day");
-      let enabledCount = 0;
-      let disabledCount = 0;
-      let sample = null;
-      for (const d of days) {
-        if (d.getAttribute("data-disabled") === "true") {
-          disabledCount++;
-        } else {
-          enabledCount++;
-          if (!sample) {
-            const btn = d.querySelector("button[aria-label]");
-            sample = {
-              date: d.getAttribute("data-date"),
-              hasButton: !!btn,
-              ariaLabel: btn ? btn.getAttribute("aria-label") : null,
-              innerHTML: d.innerHTML.substring(0, 400)
-            };
-          }
-        }
-      }
-      return { total: days.length, enabledCount, disabledCount, sample };
-    });
-    console.log(`デバッグ: 有効=${debugSample.enabledCount}, 無効=${debugSample.disabledCount}, サンプル=${JSON.stringify(debugSample.sample)}`);
 
     // 現在表示中の月から価格を抽出
     const allPrices = new Map(); // 重複排除用: date → price
