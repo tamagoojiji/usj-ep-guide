@@ -171,6 +171,28 @@ async function extractPricesFromPage(browser, url) {
     });
     await page.setViewport({ width: 1280, height: 1024 });
 
+    // JSコンソールエラーをキャプチャ
+    const consoleErrors = [];
+    page.on("console", (msg) => {
+      if (msg.type() === "error") {
+        consoleErrors.push(msg.text().substring(0, 200));
+      }
+    });
+    page.on("pageerror", (err) => {
+      consoleErrors.push(`PageError: ${err.message.substring(0, 200)}`);
+    });
+
+    // store.usj / api-usj ドメインへのXHR/fetchリクエストを記録
+    const apiCalls = [];
+    page.on("request", (req) => {
+      const reqUrl = req.url();
+      const resType = req.resourceType();
+      if ((resType === "xhr" || resType === "fetch") &&
+          (reqUrl.includes("store.usj") || reqUrl.includes("api-usj") || reqUrl.includes("universalparks"))) {
+        apiCalls.push(reqUrl.substring(0, 120));
+      }
+    });
+
     // ページ遷移（domcontentloadedで初回待ち）
     console.log(`ページ遷移: ${url}`);
     const response = await page.goto(url, {
@@ -208,6 +230,14 @@ async function extractPricesFromPage(browser, url) {
 
     // 描画完了を待つ
     await sleep(3000);
+
+    // APIコールログ出力（全パス共通: 動作パスとの比較用）
+    if (apiCalls.length > 0) {
+      console.log(`  XHR/fetchリクエスト (${apiCalls.length}件):`);
+      apiCalls.forEach((u, i) => console.log(`    [${i}] ${u}`));
+    } else {
+      console.log("  XHR/fetchリクエスト: 0件");
+    }
 
     // 全日disabledなら枚数セレクタ操作 + 追加待機（SPAの遅延レンダリング対応）
     let allDisabled = await page.evaluate(() => {
@@ -281,6 +311,10 @@ async function extractPricesFromPage(browser, url) {
             return info;
           });
           console.log("追加待機後も全日disabled — 詳細:", JSON.stringify(debugInfo));
+          if (consoleErrors.length > 0) {
+            console.log(`  JSエラー (${consoleErrors.length}件):`);
+            consoleErrors.slice(0, 10).forEach((e, i) => console.log(`    [${i}] ${e}`));
+          }
 
           // iframe内のカレンダーを探す
           const iframePrices = await extractPricesFromIframes(page);
