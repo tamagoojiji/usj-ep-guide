@@ -78,7 +78,7 @@ async function main() {
   PASS_PAGES.forEach((p, i) => console.log(`  ${i + 1}. ${p.label} (${p.passId})`));
 
   const browser = await puppeteer.launch({
-    headless: "new",
+    headless: false,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
@@ -86,6 +86,7 @@ async function main() {
       "--disable-blink-features=AutomationControlled",
       "--disable-features=AutomationControlled",
       "--disable-infobars",
+      "--window-size=1280,1024",
     ],
   });
 
@@ -171,35 +172,6 @@ async function extractPricesFromPage(browser, url) {
     });
     await page.setViewport({ width: 1280, height: 1024 });
 
-    // JSコンソールエラーをキャプチャ
-    const consoleErrors = [];
-    page.on("console", (msg) => {
-      if (msg.type() === "error") {
-        consoleErrors.push(msg.text().substring(0, 200));
-      }
-    });
-    page.on("pageerror", (err) => {
-      consoleErrors.push(`PageError: ${err.message.substring(0, 200)}`);
-    });
-
-    // store.usj / api-usj ドメインへのXHR/fetchリクエストを記録
-    const apiCalls = [];
-    const failedRequests = [];
-    page.on("request", (req) => {
-      const reqUrl = req.url();
-      const resType = req.resourceType();
-      if ((resType === "xhr" || resType === "fetch") &&
-          (reqUrl.includes("store.usj") || reqUrl.includes("api-usj") || reqUrl.includes("universalparks"))) {
-        apiCalls.push(reqUrl.substring(0, 120));
-      }
-    });
-    // HTTPエラーレスポンスをキャプチャ
-    page.on("response", (resp) => {
-      if (resp.status() >= 400) {
-        failedRequests.push(`${resp.status()} ${resp.url().substring(0, 150)}`);
-      }
-    });
-
     // ページ遷移（domcontentloadedで初回待ち）
     console.log(`ページ遷移: ${url}`);
     const response = await page.goto(url, {
@@ -238,48 +210,13 @@ async function extractPricesFromPage(browser, url) {
     // 描画完了を待つ
     await sleep(3000);
 
-    // HTTPエラーログ出力（全パス共通）
-    if (failedRequests.length > 0) {
-      console.log(`  HTTPエラー (${failedRequests.length}件):`);
-      failedRequests.forEach((r, i) => console.log(`    [${i}] ${r}`));
-    }
-
-    // 生HTMLフェッチ（全パス共通: SSR vs CSR比較）
-    const rawHtmlCheck = await fetchRawHtml(url);
-    const rawPriceCount = (rawHtmlCheck.match(/aria-label="[^"]*\s-\s\d{4,6}"/g) || []).length;
-    const rawDisabledCount = (rawHtmlCheck.match(/data-disabled="true"/g) || []).length;
-    console.log(`  生HTML(SSR): 価格付き=${rawPriceCount}, disabled=${rawDisabledCount}, 全長=${rawHtmlCheck.length}`);
-
-    // gds-calendar-day の詳細ダンプ（最初の5個: disabled/enabled両方）
+    // カレンダー状態ログ
     const calendarDebug = await page.evaluate(() => {
       const days = document.querySelectorAll("gds-calendar-day");
-      const enabled = [];
-      const disabled = [];
-      for (const day of days) {
-        const isDisabled = day.getAttribute("data-disabled") === "true";
-        const info = {
-          date: day.getAttribute("data-date"),
-          disabled: isDisabled,
-          html: day.innerHTML.substring(0, 200),
-        };
-        if (isDisabled) { disabled.push(info); }
-        else { enabled.push(info); }
-      }
-      return {
-        total: days.length,
-        enabledCount: enabled.length,
-        disabledCount: disabled.length,
-        enabledSample: enabled.slice(0, 3),
-        disabledSample: disabled.slice(0, 3),
-      };
+      const enabledCount = Array.from(days).filter(d => d.getAttribute("data-disabled") !== "true").length;
+      return { total: days.length, enabled: enabledCount };
     });
-    console.log(`  calendar: total=${calendarDebug.total} enabled=${calendarDebug.enabledCount} disabled=${calendarDebug.disabledCount}`);
-    if (calendarDebug.enabledCount > 0) {
-      console.log(`  enabled例: ${JSON.stringify(calendarDebug.enabledSample[0])}`);
-    }
-    if (calendarDebug.disabledCount > 0) {
-      console.log(`  disabled例: ${JSON.stringify(calendarDebug.disabledSample[0])}`);
-    }
+    console.log(`  calendar: total=${calendarDebug.total} enabled=${calendarDebug.enabled}`);
 
     // 全日disabledなら枚数セレクタ操作 + 追加待機（SPAの遅延レンダリング対応）
     let allDisabled = await page.evaluate(() => {
@@ -315,67 +252,7 @@ async function extractPricesFromPage(browser, url) {
           return Array.from(days).every(d => d.getAttribute("data-disabled") === "true");
         });
         if (allDisabled) {
-          // デバッグ: ページ構造 + iframe詳細を出力
-          const debugInfo = await page.evaluate(() => {
-            const info = {};
-            info.title = document.title;
-            info.calendarDays = document.querySelectorAll("gds-calendar-day").length;
-            info.gdsQuantity = !!document.querySelector("gds-quantity");
-            info.buttons = document.querySelectorAll("button").length;
-            info.inputs = document.querySelectorAll("input").length;
-            info.mainContent = !!document.querySelector("main, [role='main'], .main-content");
-            info.bodyTextLength = document.body.innerText.length;
-            // iframe詳細
-            const iframes = document.querySelectorAll("iframe");
-            info.iframes = [];
-            for (const iframe of iframes) {
-              const iframeInfo = {
-                src: iframe.src || "(empty)",
-                id: iframe.id || "(none)",
-                width: iframe.width,
-                height: iframe.height,
-              };
-              try {
-                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-                iframeInfo.hasContent = !!iframeDoc;
-                iframeInfo.bodyLength = iframeDoc ? iframeDoc.body.innerText.length : 0;
-                iframeInfo.calendarDays = iframeDoc ? iframeDoc.querySelectorAll("gds-calendar-day").length : 0;
-              } catch {
-                iframeInfo.crossOrigin = true;
-              }
-              info.iframes.push(iframeInfo);
-            }
-            // ボタンテキスト一覧（最初の20個）
-            const btns = document.querySelectorAll("button");
-            info.buttonTexts = Array.from(btns).slice(0, 20).map(b =>
-              (b.textContent || "").trim().substring(0, 40)
-            );
-            return info;
-          });
-          console.log("追加待機後も全日disabled — 詳細:", JSON.stringify(debugInfo));
-          if (consoleErrors.length > 0) {
-            console.log(`  JSエラー (${consoleErrors.length}件):`);
-            consoleErrors.slice(0, 10).forEach((e, i) => console.log(`    [${i}] ${e}`));
-          }
-
-          // iframe内のカレンダーを探す
-          const iframePrices = await extractPricesFromIframes(page);
-          if (iframePrices.length > 0) {
-            console.log(`iframe内から${iframePrices.length}件の価格を検出`);
-            return iframePrices;
-          }
-
-          // 生HTMLを直接fetchして比較（Puppeteerレンダリング問題の切り分け）
-          console.log("生HTMLフェッチで価格データ確認");
-          const rawHtml = await fetchRawHtml(page.url());
-          // aria-labelに価格が含まれるか
-          const priceMatches = rawHtml.match(/aria-label="[^"]*\s-\s\d{4,6}"/g) || [];
-          const disabledMatches = rawHtml.match(/data-disabled="true"/g) || [];
-          const enabledMatches = rawHtml.match(/data-disabled="false"/g) || [];
-          console.log(`  生HTML: 価格付きaria-label=${priceMatches.length}, disabled=${disabledMatches.length}, enabled=${enabledMatches.length}`);
-          if (priceMatches.length > 0) {
-            console.log(`  生HTML価格例: ${priceMatches[0]}`);
-          }
+          console.log("追加待機後も全日disabled — 販売日程なしと判定");
         }
       }
     }
@@ -421,179 +298,6 @@ async function extractPricesFromPage(browser, url) {
     return result;
   } finally {
     await page.close();
-  }
-}
-
-/**
- * ネットワークレスポンスを傍受して価格データを含むAPI応答を抽出
- */
-async function extractPricesFromApiResponses(page, url) {
-  const apiResponses = [];
-
-  // レスポンスリスナーを設定
-  const responseHandler = async (response) => {
-    const responseUrl = response.url();
-    // 価格データを含む可能性のあるAPI呼び出しをキャプチャ
-    if (
-      responseUrl.includes("api") ||
-      responseUrl.includes("price") ||
-      responseUrl.includes("calendar") ||
-      responseUrl.includes("product") ||
-      responseUrl.includes("availability") ||
-      responseUrl.includes("config") ||
-      responseUrl.includes("graphql") ||
-      (responseUrl.includes("store.usj") && response.request().resourceType() === "xhr") ||
-      (responseUrl.includes("store.usj") && response.request().resourceType() === "fetch")
-    ) {
-      try {
-        const text = await response.text();
-        if (text.length > 50 && text.length < 500000) {
-          apiResponses.push({ url: responseUrl, body: text });
-        }
-      } catch {
-        // レスポンスボディ取得失敗は無視
-      }
-    }
-  };
-
-  page.on("response", responseHandler);
-
-  try {
-    // ページをリロードしてAPI呼び出しをキャプチャ
-    await page.reload({ waitUntil: "domcontentloaded", timeout: PAGE_LOAD_TIMEOUT_MS });
-    try {
-      await page.waitForNetworkIdle({ idleTime: 3000, timeout: 30000 });
-    } catch {}
-    await sleep(5000);
-
-    console.log(`  キャプチャしたAPIレスポンス: ${apiResponses.length}件`);
-
-    // APIレスポンス内のURLをログ出力（デバッグ用）
-    for (const resp of apiResponses) {
-      const shortUrl = resp.url.substring(0, 100);
-      const hasPrice = /price|金額|\d{4,5}/.test(resp.body);
-      const hasDate = /\d{4}-\d{2}-\d{2}|date/.test(resp.body);
-      console.log(`  API: ${shortUrl} (len=${resp.body.length}, hasPrice=${hasPrice}, hasDate=${hasDate})`);
-    }
-
-    // 価格データを含むレスポンスを探す
-    for (const resp of apiResponses) {
-      try {
-        const data = JSON.parse(resp.body);
-        const prices = findPricesInJson(data);
-        if (prices.length > 0) {
-          console.log(`  価格データ発見: ${resp.url.substring(0, 80)} → ${prices.length}件`);
-          return prices;
-        }
-      } catch {
-        // JSONパース失敗は無視
-      }
-    }
-
-    return [];
-  } finally {
-    page.off("response", responseHandler);
-  }
-}
-
-/**
- * JSONオブジェクト内の価格データを再帰的に探索
- */
-function findPricesInJson(obj, depth = 0) {
-  if (depth > 10 || !obj) return [];
-
-  // 配列の場合: 各要素を検査
-  if (Array.isArray(obj)) {
-    // [{date: "...", price: N}] パターン
-    const prices = [];
-    for (const item of obj) {
-      if (item && typeof item === "object") {
-        const dateVal = item.date || item.Date || item.startDate || item.day;
-        const priceVal = item.price || item.Price || item.amount || item.unitPrice || item.adultPrice;
-        if (dateVal && priceVal && typeof priceVal === "number" && priceVal >= 5000 && priceVal <= 100000) {
-          const dateStr = String(dateVal).substring(0, 10); // YYYY-MM-DD
-          if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-            prices.push({ date: dateStr, price: priceVal });
-          }
-        }
-      }
-    }
-    if (prices.length > 0) return prices;
-
-    // 各要素を再帰的に探索
-    for (const item of obj) {
-      const found = findPricesInJson(item, depth + 1);
-      if (found.length > 0) return found;
-    }
-    return [];
-  }
-
-  // オブジェクトの場合: 各値を再帰的に探索
-  if (typeof obj === "object") {
-    for (const key of Object.keys(obj)) {
-      const found = findPricesInJson(obj[key], depth + 1);
-      if (found.length > 0) return found;
-    }
-  }
-
-  return [];
-}
-
-/**
- * iframe内のカレンダーから価格を抽出
- */
-async function extractPricesFromIframes(page) {
-  try {
-    const frames = page.frames();
-    console.log(`  iframe数: ${frames.length}（メインフレーム含む）`);
-
-    for (let i = 0; i < frames.length; i++) {
-      const frame = frames[i];
-      if (frame === page.mainFrame()) continue;
-
-      try {
-        const frameUrl = frame.url();
-        console.log(`  iframe[${i}]: ${frameUrl.substring(0, 80)}`);
-
-        const calendarDays = await frame.evaluate(() => {
-          return document.querySelectorAll("gds-calendar-day").length;
-        }).catch(() => 0);
-
-        if (calendarDays > 0) {
-          console.log(`  iframe[${i}]にカレンダー要素${calendarDays}個を検出`);
-
-          const prices = await frame.evaluate(() => {
-            const result = [];
-            const days = document.querySelectorAll("gds-calendar-day");
-            for (const day of days) {
-              if (day.getAttribute("data-disabled") === "true") continue;
-              const dataDate = day.getAttribute("data-date");
-              if (!dataDate) continue;
-              const button = day.querySelector("button[aria-label]");
-              if (!button) continue;
-              const ariaLabel = button.getAttribute("aria-label");
-              if (!ariaLabel) continue;
-              const priceMatch = ariaLabel.match(/\s-\s(\d+)$/);
-              if (!priceMatch) continue;
-              const price = parseInt(priceMatch[1], 10);
-              if (price < 5000 || price > 100000) continue;
-              const parts = dataDate.split("-");
-              if (parts.length !== 3) continue;
-              const dateStr = `${parts[2]}-${parts[0]}-${parts[1]}`;
-              result.push({ date: dateStr, price: price });
-            }
-            return result;
-          });
-
-          if (prices.length > 0) return prices;
-        }
-      } catch {
-        // cross-origin iframe — skip
-      }
-    }
-    return [];
-  } catch {
-    return [];
   }
 }
 
@@ -748,25 +452,6 @@ async function postToGas(gasUrl, apiKey, passId, prices) {
   }
 
   return await response.json();
-}
-
-/**
- * URLの生HTMLを直接fetch（ブラウザレンダリングなし）
- */
-async function fetchRawHtml(url) {
-  try {
-    const resp = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
-      },
-      redirect: "follow",
-    });
-    return await resp.text();
-  } catch {
-    return "";
-  }
 }
 
 function sleep(ms) {
