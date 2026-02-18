@@ -164,14 +164,21 @@ async function extractPricesFromPage(browser, url) {
     // 現在表示中の月から価格を抽出
     const allPrices = new Map(); // 重複排除用: date → price
 
+    let consecutiveEmpty = 0; // 連続で0件の月数
+
     for (let nav = 0; nav <= MAX_MONTH_NAVIGATIONS; nav++) {
       const monthPrices = await extractCurrentMonthPrices(page);
       console.log(`  月${nav + 1}: ${monthPrices.length}件の価格を抽出`);
 
-      if (monthPrices.length === 0 && nav > 0) {
-        // 価格付き日付がなくなったら終了
-        console.log("  価格付き日付なし — 抽出終了");
-        break;
+      if (monthPrices.length === 0) {
+        consecutiveEmpty++;
+        // 価格のある月を過ぎた後に2回連続で0件なら終了
+        if (consecutiveEmpty >= 2 && allPrices.size > 0) {
+          console.log("  価格付き日付なし（連続2回） — 抽出終了");
+          break;
+        }
+      } else {
+        consecutiveEmpty = 0;
       }
 
       for (const item of monthPrices) {
