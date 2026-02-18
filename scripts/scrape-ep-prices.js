@@ -288,6 +288,14 @@ async function extractPricesFromPage(browser, url) {
             console.log(`iframe内から${iframePrices.length}件の価格を検出`);
             return iframePrices;
           }
+
+          // 最終手段: ページリロードしてネットワークレスポンスからAPI価格を抽出
+          console.log("API応答から価格抽出を試行（ページリロード）");
+          const apiPrices = await extractPricesFromApiResponses(page, page.url());
+          if (apiPrices.length > 0) {
+            console.log(`API応答から${apiPrices.length}件の価格を検出`);
+            return apiPrices;
+          }
         }
       }
     }
@@ -334,6 +342,121 @@ async function extractPricesFromPage(browser, url) {
   } finally {
     await page.close();
   }
+}
+
+/**
+ * ネットワークレスポンスを傍受して価格データを含むAPI応答を抽出
+ */
+async function extractPricesFromApiResponses(page, url) {
+  const apiResponses = [];
+
+  // レスポンスリスナーを設定
+  const responseHandler = async (response) => {
+    const responseUrl = response.url();
+    // 価格データを含む可能性のあるAPI呼び出しをキャプチャ
+    if (
+      responseUrl.includes("api") ||
+      responseUrl.includes("price") ||
+      responseUrl.includes("calendar") ||
+      responseUrl.includes("product") ||
+      responseUrl.includes("availability") ||
+      responseUrl.includes("config") ||
+      responseUrl.includes("graphql") ||
+      (responseUrl.includes("store.usj") && response.request().resourceType() === "xhr") ||
+      (responseUrl.includes("store.usj") && response.request().resourceType() === "fetch")
+    ) {
+      try {
+        const text = await response.text();
+        if (text.length > 50 && text.length < 500000) {
+          apiResponses.push({ url: responseUrl, body: text });
+        }
+      } catch {
+        // レスポンスボディ取得失敗は無視
+      }
+    }
+  };
+
+  page.on("response", responseHandler);
+
+  try {
+    // ページをリロードしてAPI呼び出しをキャプチャ
+    await page.reload({ waitUntil: "domcontentloaded", timeout: PAGE_LOAD_TIMEOUT_MS });
+    try {
+      await page.waitForNetworkIdle({ idleTime: 3000, timeout: 30000 });
+    } catch {}
+    await sleep(5000);
+
+    console.log(`  キャプチャしたAPIレスポンス: ${apiResponses.length}件`);
+
+    // APIレスポンス内のURLをログ出力（デバッグ用）
+    for (const resp of apiResponses) {
+      const shortUrl = resp.url.substring(0, 100);
+      const hasPrice = /price|金額|\d{4,5}/.test(resp.body);
+      const hasDate = /\d{4}-\d{2}-\d{2}|date/.test(resp.body);
+      console.log(`  API: ${shortUrl} (len=${resp.body.length}, hasPrice=${hasPrice}, hasDate=${hasDate})`);
+    }
+
+    // 価格データを含むレスポンスを探す
+    for (const resp of apiResponses) {
+      try {
+        const data = JSON.parse(resp.body);
+        const prices = findPricesInJson(data);
+        if (prices.length > 0) {
+          console.log(`  価格データ発見: ${resp.url.substring(0, 80)} → ${prices.length}件`);
+          return prices;
+        }
+      } catch {
+        // JSONパース失敗は無視
+      }
+    }
+
+    return [];
+  } finally {
+    page.off("response", responseHandler);
+  }
+}
+
+/**
+ * JSONオブジェクト内の価格データを再帰的に探索
+ */
+function findPricesInJson(obj, depth = 0) {
+  if (depth > 10 || !obj) return [];
+
+  // 配列の場合: 各要素を検査
+  if (Array.isArray(obj)) {
+    // [{date: "...", price: N}] パターン
+    const prices = [];
+    for (const item of obj) {
+      if (item && typeof item === "object") {
+        const dateVal = item.date || item.Date || item.startDate || item.day;
+        const priceVal = item.price || item.Price || item.amount || item.unitPrice || item.adultPrice;
+        if (dateVal && priceVal && typeof priceVal === "number" && priceVal >= 5000 && priceVal <= 100000) {
+          const dateStr = String(dateVal).substring(0, 10); // YYYY-MM-DD
+          if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            prices.push({ date: dateStr, price: priceVal });
+          }
+        }
+      }
+    }
+    if (prices.length > 0) return prices;
+
+    // 各要素を再帰的に探索
+    for (const item of obj) {
+      const found = findPricesInJson(item, depth + 1);
+      if (found.length > 0) return found;
+    }
+    return [];
+  }
+
+  // オブジェクトの場合: 各値を再帰的に探索
+  if (typeof obj === "object") {
+    for (const key of Object.keys(obj)) {
+      const found = findPricesInJson(obj[key], depth + 1);
+      if (found.length > 0) return found;
+    }
+  }
+
+  return [];
 }
 
 /**
