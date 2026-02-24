@@ -106,8 +106,16 @@ async function main() {
 
       console.log(`スクショ撮影完了 (${Math.round(screenshotBase64.length / 1024)}KB base64)`);
 
-      // GAS APIにスクショを送信 → Gemini Visionで価格読み取り
-      const gasResult = await postScreenshotToGas(GAS_URL, API_KEY, pass.passId, screenshotBase64);
+      // GAS APIにスクショを送信 → Gemini Visionで価格読み取り（リトライ付き）
+      let gasResult = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        gasResult = await postScreenshotToGas(GAS_URL, API_KEY, pass.passId, screenshotBase64);
+        if (gasResult.success || !gasResult.error || !gasResult.error.includes("high demand")) {
+          break;
+        }
+        console.log(`Gemini高負荷 — ${attempt}/3回目、30秒後にリトライ`);
+        await sleep(30000);
+      }
       console.log(`GAS応答: ${JSON.stringify(gasResult)}`);
 
       if (gasResult.success) {
@@ -208,46 +216,18 @@ async function captureCalendarScreenshot(browser, url) {
       // タイムアウトしても続行
     }
 
-    // 枚数セレクタの出現を待ってからクリック（カレンダー表示の前提条件になるページがある）
-    let quantityClicked = false;
-    try {
-      await page.waitForSelector("gds-quantity, button[aria-label*='増'], input[type='number']", { timeout: 15000 });
-      console.log("枚数セレクタを検出");
-      await sleep(1000);
-      quantityClicked = await tryClickQuantitySelector(page);
-      if (quantityClicked) {
-        console.log("枚数セレクタをクリック（カレンダー表示のトリガー）");
-        await sleep(5000);
-      }
-    } catch {
-      console.log("枚数セレクタが見つかりません — そのまま続行");
+    // 枚数セレクタ操作を試行（カレンダー表示のトリガーになる場合がある）
+    const quantityClicked = await tryClickQuantitySelector(page);
+    if (quantityClicked) {
+      console.log("枚数セレクタをクリック");
+      await sleep(3000);
     }
 
-    // カレンダー要素の表示を待つ（1回目）
-    let calendarFound = false;
+    // カレンダー要素の表示を待つ
     try {
       await page.waitForSelector("gds-calendar-day", { timeout: 30000 });
-      calendarFound = true;
       console.log("カレンダー要素を検出");
     } catch {
-      // 枚数セレクタ未操作 or 操作後もカレンダーが出ない場合、再度操作を試す
-      if (!quantityClicked) {
-        console.log("カレンダー未検出 — 枚数セレクタ操作を試行");
-        const retryClick = await tryClickQuantitySelector(page);
-        if (retryClick) {
-          await sleep(5000);
-          try {
-            await page.waitForSelector("gds-calendar-day", { timeout: 15000 });
-            calendarFound = true;
-            console.log("枚数操作後にカレンダー要素を検出");
-          } catch {
-            // それでも見つからない
-          }
-        }
-      }
-    }
-
-    if (!calendarFound) {
       console.log("カレンダー要素が見つかりません — スキップ");
       return null;
     }
@@ -255,36 +235,15 @@ async function captureCalendarScreenshot(browser, url) {
     // 描画完了を待つ
     await sleep(3000);
 
-    // 全日disabledチェック（枚数操作後に再描画される場合がある）
-    let allDisabled = await page.evaluate(() => {
+    // カレンダー状態ログ（参考情報、スキップ判定には使わない）
+    const calendarInfo = await page.evaluate(() => {
       const days = document.querySelectorAll("gds-calendar-day");
-      return Array.from(days).every(d => d.getAttribute("data-disabled") === "true");
+      const enabled = Array.from(days).filter(d => d.getAttribute("data-disabled") !== "true").length;
+      return { total: days.length, enabled: enabled };
     });
+    console.log(`カレンダー状態: total=${calendarInfo.total} enabled=${calendarInfo.enabled}`);
 
-    if (allDisabled) {
-      console.log("全日disabled — 追加待機（10秒）");
-      await sleep(10000);
-
-      // 再チェック
-      allDisabled = await page.evaluate(() => {
-        const days = document.querySelectorAll("gds-calendar-day");
-        return Array.from(days).every(d => d.getAttribute("data-disabled") === "true");
-      });
-
-      if (allDisabled) {
-        console.log("待機後も全日disabled — 販売日程なしと判定");
-        return null;
-      }
-    }
-
-    // 有効日数を確認
-    const enabledCount = await page.evaluate(() => {
-      const days = document.querySelectorAll("gds-calendar-day");
-      return Array.from(days).filter(d => d.getAttribute("data-disabled") !== "true").length;
-    });
-    console.log(`有効な日付: ${enabledCount}件`);
-
-    // フルページスクリーンショット撮影（JPEG で容量削減）
+    // フルページスクリーンショット撮影（常に撮影→Geminiが価格有無を判断）
     const screenshotBuffer = await page.screenshot({
       fullPage: true,
       type: "jpeg",
