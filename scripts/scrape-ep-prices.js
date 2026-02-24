@@ -208,12 +208,38 @@ async function captureCalendarScreenshot(browser, url) {
       // タイムアウトしても続行
     }
 
-    // カレンダー要素の表示を待つ
+    // 先に枚数セレクタを操作（カレンダー表示の前提条件になるページがある）
+    const quantityClicked = await tryClickQuantitySelector(page);
+    if (quantityClicked) {
+      console.log("枚数セレクタをクリック（カレンダー表示のトリガー）");
+      await sleep(3000);
+    }
+
+    // カレンダー要素の表示を待つ（1回目）
+    let calendarFound = false;
     try {
       await page.waitForSelector("gds-calendar-day", { timeout: 30000 });
+      calendarFound = true;
       console.log("カレンダー要素を検出");
     } catch {
-      // カレンダー要素が見つからない場合はスキップ
+      // 枚数セレクタ未操作 or 操作後もカレンダーが出ない場合、再度操作を試す
+      if (!quantityClicked) {
+        console.log("カレンダー未検出 — 枚数セレクタ操作を試行");
+        const retryClick = await tryClickQuantitySelector(page);
+        if (retryClick) {
+          await sleep(5000);
+          try {
+            await page.waitForSelector("gds-calendar-day", { timeout: 15000 });
+            calendarFound = true;
+            console.log("枚数操作後にカレンダー要素を検出");
+          } catch {
+            // それでも見つからない
+          }
+        }
+      }
+    }
+
+    if (!calendarFound) {
       console.log("カレンダー要素が見つかりません — スキップ");
       return null;
     }
@@ -221,19 +247,15 @@ async function captureCalendarScreenshot(browser, url) {
     // 描画完了を待つ
     await sleep(3000);
 
-    // 全日disabledなら枚数セレクタ操作
+    // 全日disabledチェック（枚数操作後に再描画される場合がある）
     let allDisabled = await page.evaluate(() => {
       const days = document.querySelectorAll("gds-calendar-day");
       return Array.from(days).every(d => d.getAttribute("data-disabled") === "true");
     });
 
     if (allDisabled) {
-      console.log("全日disabled — 枚数セレクタ操作を試行");
-      const quantityClicked = await tryClickQuantitySelector(page);
-      if (quantityClicked) {
-        console.log("枚数セレクタをクリック — カレンダー更新待機（8秒）");
-        await sleep(8000);
-      }
+      console.log("全日disabled — 追加待機（10秒）");
+      await sleep(10000);
 
       // 再チェック
       allDisabled = await page.evaluate(() => {
@@ -242,8 +264,7 @@ async function captureCalendarScreenshot(browser, url) {
       });
 
       if (allDisabled) {
-        console.log("操作後も全日disabled — 販売日程なしと判定");
-        // 販売日程なしでもスクショは撮らない（Geminiに送っても意味がない）
+        console.log("待機後も全日disabled — 販売日程なしと判定");
         return null;
       }
     }
