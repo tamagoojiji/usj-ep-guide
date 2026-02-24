@@ -208,11 +208,19 @@ async function captureCalendarScreenshot(browser, url) {
       // タイムアウトしても続行
     }
 
-    // 先に枚数セレクタを操作（カレンダー表示の前提条件になるページがある）
-    const quantityClicked = await tryClickQuantitySelector(page);
-    if (quantityClicked) {
-      console.log("枚数セレクタをクリック（カレンダー表示のトリガー）");
-      await sleep(3000);
+    // 枚数セレクタの出現を待ってからクリック（カレンダー表示の前提条件になるページがある）
+    let quantityClicked = false;
+    try {
+      await page.waitForSelector("gds-quantity, button[aria-label*='増'], input[type='number']", { timeout: 15000 });
+      console.log("枚数セレクタを検出");
+      await sleep(1000);
+      quantityClicked = await tryClickQuantitySelector(page);
+      if (quantityClicked) {
+        console.log("枚数セレクタをクリック（カレンダー表示のトリガー）");
+        await sleep(5000);
+      }
+    } catch {
+      console.log("枚数セレクタが見つかりません — そのまま続行");
     }
 
     // カレンダー要素の表示を待つ（1回目）
