@@ -817,12 +817,37 @@
         ATTRACTION_TAGS = data.attractionTags;
         PASS_DATA_LOADED = true;
         console.log("パスデータ: API取得成功 (" + PASSES.length + "件)");
+
+        // 最終更新日と価格データ期間を表示
+        updateLastUpdatedLabels(data.lastUpdated, data.priceRange);
+
         callback();
       })
       .catch(function (err) {
         console.warn("パスデータAPI取得失敗:", err);
         applyFallback();
       });
+  }
+
+  /**
+   * 最終データ更新日と価格データ期間を画面に反映
+   */
+  function updateLastUpdatedLabels(lastUpdated, priceRange) {
+    var els = document.querySelectorAll("[data-auto-update]");
+    if (!els.length) return;
+
+    var parts = [];
+    if (lastUpdated) {
+      var d = lastUpdated.split("-");
+      parts.push("最終データ更新: " + Number(d[1]) + "月" + Number(d[2]) + "日");
+    }
+    if (priceRange && priceRange.to) {
+      var t = priceRange.to.split("-");
+      parts.push("価格データ: " + Number(t[1]) + "月" + Number(t[2]) + "日まで");
+    }
+
+    var text = parts.join(" / ");
+    els.forEach(function (el) { el.textContent = text; });
   }
 
   // ============================================================
