@@ -1,4 +1,4 @@
-name: EP価格スクレイピング
+name: EP価格スクショ取得
 
 on:
   schedule:
@@ -28,7 +28,7 @@ jobs:
       - name: Xvfbインストール（非headlessブラウザ用）
         run: sudo apt-get install -y xvfb
 
-      - name: EP価格スクレイピング実行
+      - name: EP価格スクショ取得実行
         working-directory: scripts
         env:
           GAS_WEB_APP_URL: ${{ secrets.GAS_WEB_APP_URL }}
