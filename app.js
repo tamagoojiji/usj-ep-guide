@@ -856,13 +856,34 @@
   function init() {
     initPrivacyModal();
 
-    // パスデータ取得後にLIFF初期化
+    // パスデータとLIFFを並列で初期化（GASコールドスタートの待ち時間を短縮）
     loadPassData(function () {
-      initLiff();
+      // パスデータ読み込み完了（バックグラウンド）
     });
+    initLiff(); // LIFFは即座に開始（パスデータを待たない）
 
     // スタートボタン
     document.getElementById("start-btn").addEventListener("click", function () {
+      if (!PASS_DATA_LOADED) {
+        // パスデータ未取得 → ローディング表示して待機
+        var btn = this;
+        btn.disabled = true;
+        btn.textContent = "データ読み込み中...";
+        var checkInterval = setInterval(function () {
+          if (PASS_DATA_LOADED) {
+            clearInterval(checkInterval);
+            btn.disabled = false;
+            btn.textContent = "診断スタート";
+            resetAll();
+            showScreen("screen-date");
+            renderCalendar(3);
+            renderHeightChoices();
+            renderAttractionChoices();
+            renderBudgetChoices();
+          }
+        }, 200);
+        return;
+      }
       resetAll();
       showScreen("screen-date");
       renderCalendar(3);
