@@ -802,19 +802,6 @@ body {
   width: 100%;
 }
 
-/* === 期間表示 === */
-.top-period {
-  display: inline-block;
-  background: #FFF3E0;
-  border: 1px solid #FFB74D;
-  color: #E65100;
-  font-size: 13px;
-  font-weight: 700;
-  padding: 4px 16px;
-  border-radius: 20px;
-  margin-bottom: 12px;
-}
-
 /* === 注意書きボックス（強調版） === */
 .disclaimer-box {
   margin-top: 20px;
