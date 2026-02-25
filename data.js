@@ -16,6 +16,7 @@ var FALLBACK_ATTRACTION_TAGS = {
   dinosaur: "フライングダイナソー",
   hollywood: "ハリウッド・ドリーム（バックドロップ含む）",
   minion: "ミニオン系",
+  jaws: "ジョーズ",
   jurassic: "ジュラシック・パーク・ザ・ライド",
   theater: "シアター系（4-Dなど）",
   any: "特にこだわりなし"
