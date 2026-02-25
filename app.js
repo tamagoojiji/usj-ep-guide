@@ -57,6 +57,16 @@
         return;
       }
 
+      // リセットモード（?reset=true で登録画面に戻す）
+      var params = new URLSearchParams(window.location.search);
+      if (params.get("reset") === "true") {
+        localStorage.removeItem("ep_user_" + lineUid);
+        localStorage.removeItem("ep_registered_" + lineUid);
+        userRegistered = false;
+        showRegisterScreen();
+        return;
+      }
+
       // ユーザー登録チェック
       checkUserRegistration();
     }).catch(function (err) {
