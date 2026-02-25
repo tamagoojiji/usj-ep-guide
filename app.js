@@ -66,18 +66,36 @@
   }
 
   // ============================================================
-  //  ユーザー登録チェック（GAS）
+  //  ユーザー登録チェック（キャッシュ優先 + GASバックグラウンド確認）
   // ============================================================
   function checkUserRegistration() {
-    if (!GAS_URL) {
-      // GAS未設定時はローカルストレージで代用
-      var saved = localStorage.getItem("ep_user_" + lineUid);
-      if (saved) {
-        userRegistered = true;
-        showTopScreen();
-      } else {
-        showRegisterScreen();
+    // キャッシュから即座に判定（GAS呼び出しを待たない）
+    var cachedRegistered = localStorage.getItem("ep_registered_" + lineUid);
+    var localUser = localStorage.getItem("ep_user_" + lineUid);
+
+    if (cachedRegistered === "true" || localUser) {
+      // キャッシュあり → 即座に表紙表示
+      userRegistered = true;
+      showTopScreen();
+
+      // バックグラウンドでGASと同期（画面はブロックしない）
+      if (GAS_URL) {
+        fetch(GAS_URL + "?action=checkUser&uid=" + encodeURIComponent(lineUid))
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (!data.registered) {
+              // GAS側で未登録 → キャッシュクリア（次回は登録画面へ）
+              localStorage.removeItem("ep_registered_" + lineUid);
+            }
+          })
+          .catch(function () { /* バックグラウンドなので無視 */ });
       }
+      return;
+    }
+
+    // キャッシュなし → GASに問い合わせ
+    if (!GAS_URL) {
+      showRegisterScreen();
       return;
     }
 
@@ -86,20 +104,14 @@
       .then(function (data) {
         if (data.registered) {
           userRegistered = true;
+          localStorage.setItem("ep_registered_" + lineUid, "true");
           showTopScreen();
         } else {
           showRegisterScreen();
         }
       })
       .catch(function () {
-        // GASエラー時はローカルストレージで代用
-        var saved = localStorage.getItem("ep_user_" + lineUid);
-        if (saved) {
-          userRegistered = true;
-          showTopScreen();
-        } else {
-          showRegisterScreen();
-        }
+        showRegisterScreen();
       });
   }
 
@@ -187,6 +199,7 @@
 
       // ローカル保存（GASの有無に関わらず）
       localStorage.setItem("ep_user_" + lineUid, JSON.stringify(userData));
+      localStorage.setItem("ep_registered_" + lineUid, "true");
       userRegistered = true;
 
       // GASに送信
@@ -791,12 +804,15 @@
   }
 
   // ============================================================
-  //  パスデータをAPI取得（フォールバック付き）
+  //  パスデータをAPI取得（キャッシュ優先 + フォールバック付き）
   // ============================================================
+  var PASS_CACHE_KEY = "ep_pass_cache";
+  var PASS_CACHE_MAX_AGE = 6 * 60 * 60 * 1000; // 6時間
+
   function loadPassData(callback) {
     // フォールバック適用
     function applyFallback() {
-      if (typeof FALLBACK_PASSES !== "undefined" && FALLBACK_PASSES.length > 0) {
+      if (!PASS_DATA_LOADED && typeof FALLBACK_PASSES !== "undefined" && FALLBACK_PASSES.length > 0) {
         PASSES = FALLBACK_PASSES;
         ATTRACTION_TAGS = FALLBACK_ATTRACTION_TAGS;
         PASS_DATA_LOADED = true;
@@ -805,27 +821,56 @@
       callback();
     }
 
+    // キャッシュから即座に読み込み
+    var cacheUsed = false;
+    try {
+      var cached = localStorage.getItem(PASS_CACHE_KEY);
+      if (cached) {
+        var cacheData = JSON.parse(cached);
+        if (cacheData.passes && cacheData.passes.length > 0 &&
+            Date.now() - cacheData.cachedAt < PASS_CACHE_MAX_AGE) {
+          PASSES = cacheData.passes;
+          ATTRACTION_TAGS = cacheData.attractionTags;
+          PASS_DATA_LOADED = true;
+          updateLastUpdatedLabels(cacheData.lastUpdated, cacheData.priceRange);
+          console.log("パスデータ: キャッシュ使用 (" + PASSES.length + "件)");
+          cacheUsed = true;
+          callback(); // 即座にコールバック
+        }
+      }
+    } catch (e) { /* キャッシュ読み込み失敗は無視 */ }
+
+    // APIからバックグラウンドで取得（キャッシュ更新 or 初回取得）
     fetch(GAS_URL + "?action=getPassData")
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (data.error || !data.passes || data.passes.length === 0) {
           console.warn("API応答エラー:", data.error || "パスデータなし");
-          applyFallback();
+          if (!cacheUsed) applyFallback();
           return;
         }
         PASSES = data.passes;
         ATTRACTION_TAGS = data.attractionTags;
         PASS_DATA_LOADED = true;
         console.log("パスデータ: API取得成功 (" + PASSES.length + "件)");
-
-        // 最終更新日と価格データ期間を表示
         updateLastUpdatedLabels(data.lastUpdated, data.priceRange);
 
-        callback();
+        // キャッシュ保存
+        try {
+          localStorage.setItem(PASS_CACHE_KEY, JSON.stringify({
+            passes: data.passes,
+            attractionTags: data.attractionTags,
+            lastUpdated: data.lastUpdated,
+            priceRange: data.priceRange,
+            cachedAt: Date.now()
+          }));
+        } catch (e) { /* localStorage容量不足は無視 */ }
+
+        if (!cacheUsed) callback();
       })
       .catch(function (err) {
         console.warn("パスデータAPI取得失敗:", err);
-        applyFallback();
+        if (!cacheUsed) applyFallback();
       });
   }
 
