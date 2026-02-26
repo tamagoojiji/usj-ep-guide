@@ -614,6 +614,58 @@
       otherContainer.innerHTML = othersHtml;
     }
 
+    // 予告パスセクション
+    var upcomingContainer = document.getElementById("upcoming-results");
+    var upcomingCards = document.getElementById("upcoming-cards");
+    if (upcomingContainer && upcomingCards) {
+      if (UPCOMING_PASSES && UPCOMING_PASSES.length > 0) {
+        var upHtml = "";
+        UPCOMING_PASSES.forEach(function (up) {
+          upHtml += '<div class="upcoming-card">';
+          upHtml += '<div class="upcoming-card-name">' + (up.passName || "") + '</div>';
+
+          // 販売状況バッジ
+          if (up.salesStatus === "販売予定") {
+            if (up.salesFrom) {
+              var sfp = up.salesFrom.split('-');
+              var sfMonth = parseInt(sfp[1], 10);
+              var sfDay = parseInt(sfp[2], 10);
+              upHtml += '<span class="sales-badge sales-badge--upcoming">' + sfMonth + '月' + sfDay + '日〜販売開始予定</span>';
+            } else {
+              upHtml += '<span class="sales-badge sales-badge--upcoming">販売予定</span>';
+            }
+          } else if (up.salesStatus === "販売中") {
+            upHtml += '<span class="sales-badge sales-badge--active">販売中</span>';
+          } else if (up.salesStatus === "受付終了") {
+            upHtml += '<span class="sales-badge sales-badge--ended">受付終了</span>';
+          } else if (up.salesStatus) {
+            upHtml += '<span class="sales-badge sales-badge--upcoming">' + up.salesStatus + '</span>';
+          }
+
+          // 価格
+          if (up.minPrice) {
+            upHtml += '<div class="upcoming-card-price">¥' + up.minPrice.toLocaleString() + '~</div>';
+            upHtml += '<p class="price-annotation">※日別価格は販売開始後に確定します</p>';
+          }
+
+          // メタ情報
+          upHtml += '<div class="upcoming-card-meta">';
+          if (up.performanceFrom && up.performanceTo) {
+            var pfp = up.performanceFrom.split('-');
+            var ptp = up.performanceTo.split('-');
+            upHtml += '<span>利用期間: ' + parseInt(pfp[1], 10) + '/' + parseInt(pfp[2], 10) + '〜' + parseInt(ptp[1], 10) + '/' + parseInt(ptp[2], 10) + '</span>';
+          }
+          upHtml += '</div>';
+
+          upHtml += '</div>';
+        });
+        upcomingCards.innerHTML = upHtml;
+        upcomingContainer.style.display = "block";
+      } else {
+        upcomingContainer.style.display = "none";
+      }
+    }
+
     // プランニングCTAのハイライト（節約選択時）
     var planningCta = document.getElementById("planning-cta");
     if (planningCta) {
@@ -642,7 +694,17 @@
 
     html += '<div class="result-card-badge" style="background:' + p.color + '">' + p.shortName + '</div>';
     html += '<h3 class="result-card-name">' + p.name + '</h3>';
-    html += '<p class="result-card-price" style="color:' + p.color + '">¥' + price.toLocaleString() + '</p>';
+
+    // 日別価格がある場合は通常表示、ない場合はローチケ最低価格+注釈
+    var hasDailyPrice = price && price > 0;
+    if (hasDailyPrice) {
+      html += '<p class="result-card-price" style="color:' + p.color + '">¥' + price.toLocaleString() + '</p>';
+    } else if (p.lawson && p.lawson.minPrice) {
+      html += '<p class="result-card-price" style="color:' + p.color + '">¥' + p.lawson.minPrice.toLocaleString() + '~</p>';
+      html += '<p class="price-annotation">※日別価格は販売開始後に確定します</p>';
+    }
+
+    html += buildSalesBadge(p);
     html += '<p class="result-card-desc">' + p.description + '</p>';
 
     if (isMain) {
@@ -655,6 +717,48 @@
 
     html += '</div>';
     return html;
+  }
+
+  // === 販売状況バッジ ===
+  function buildSalesBadge(pass) {
+    var html = '';
+
+    // ローチケデータがある場合はそちらを優先
+    if (pass.lawson && pass.lawson.salesStatus) {
+      var status = pass.lawson.salesStatus;
+      if (status === "販売中") {
+        if (pass.lawson.salesTo) {
+          var tp = pass.lawson.salesTo.split('-');
+          var tMonth = parseInt(tp[1], 10);
+          var tDay = parseInt(tp[2], 10);
+          html += '<span class="sales-badge sales-badge--active">' + tMonth + '月' + tDay + '日まで販売</span>';
+        } else {
+          html += '<span class="sales-badge sales-badge--active">販売中</span>';
+        }
+      } else if (status === "販売予定") {
+        if (pass.lawson.salesFrom) {
+          var fp = pass.lawson.salesFrom.split('-');
+          var fMonth = parseInt(fp[1], 10);
+          var fDay = parseInt(fp[2], 10);
+          html += '<span class="sales-badge sales-badge--upcoming">' + fMonth + '月' + fDay + '日〜販売開始予定</span>';
+        } else {
+          html += '<span class="sales-badge sales-badge--upcoming">販売予定</span>';
+        }
+      } else if (status === "受付終了") {
+        html += '<span class="sales-badge sales-badge--ended">受付終了</span>';
+      }
+      return html;
+    }
+
+    // ローチケデータなし → 既存ロジック（価格データの最終日を表示）
+    if (!pass.pricing) return '';
+    var dates = Object.keys(pass.pricing).sort();
+    if (dates.length === 0) return '';
+    var lastDate = dates[dates.length - 1];
+    var parts = lastDate.split('-');
+    var month = parseInt(parts[1], 10);
+    var day = parseInt(parts[2], 10);
+    return '<span class="sales-badge sales-badge--active">' + month + '月' + day + '日まで販売</span>';
   }
 
   // === アトラクションが時間指定かどうか ===
@@ -843,6 +947,7 @@
             Date.now() - cacheData.cachedAt < PASS_CACHE_MAX_AGE) {
           PASSES = cacheData.passes;
           ATTRACTION_TAGS = cacheData.attractionTags;
+          UPCOMING_PASSES = cacheData.upcoming || [];
           PASS_DATA_LOADED = true;
           updateLastUpdatedLabels(cacheData.lastUpdated, cacheData.priceRange);
           console.log("パスデータ: キャッシュ使用 (" + PASSES.length + "件)");
@@ -863,14 +968,16 @@
         }
         PASSES = data.passes;
         ATTRACTION_TAGS = data.attractionTags;
+        UPCOMING_PASSES = data.upcoming || [];
         PASS_DATA_LOADED = true;
-        console.log("パスデータ: API取得成功 (" + PASSES.length + "件)");
+        console.log("パスデータ: API取得成功 (" + PASSES.length + "件, 予告" + UPCOMING_PASSES.length + "件)");
         updateLastUpdatedLabels(data.lastUpdated, data.priceRange);
 
         // キャッシュ保存
         try {
           localStorage.setItem(PASS_CACHE_KEY, JSON.stringify({
             passes: data.passes,
+            upcoming: data.upcoming || [],
             attractionTags: data.attractionTags,
             lastUpdated: data.lastUpdated,
             priceRange: data.priceRange,

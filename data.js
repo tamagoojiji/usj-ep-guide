@@ -7,6 +7,9 @@ var PASSES = [];
 // === データ取得完了フラグ ===
 var PASS_DATA_LOADED = false;
 
+// === 予告パスデータ（API取得後に上書きされる） ===
+var UPCOMING_PASSES = [];
+
 // === フォールバック用アトラクションタグ定義 ===
 var FALLBACK_ATTRACTION_TAGS = {
   donkey: "ドンキーコング・トロッコ",

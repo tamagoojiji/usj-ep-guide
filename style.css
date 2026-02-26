@@ -440,6 +440,12 @@ body {
 .result-card-price {
   font-size: 24px;
   font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.result-card-sales-end {
+  font-size: 12px;
+  color: #888;
   margin-bottom: 12px;
 }
 
@@ -634,6 +640,11 @@ body {
 
 .sub-result-card .result-card-price {
   font-size: 18px;
+  margin-bottom: 4px;
+}
+
+.sub-result-card .result-card-sales-end {
+  font-size: 11px;
   margin-bottom: 8px;
 }
 
@@ -1324,4 +1335,88 @@ body {
 
 .survey-section.submitted .survey-sub {
   display: none;
+}
+
+/* === 販売状況バッジ === */
+.sales-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.sales-badge--active {
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+
+.sales-badge--upcoming {
+  background: #E3F2FD;
+  color: #1565C0;
+}
+
+.sales-badge--ended {
+  background: #F5F5F5;
+  color: #999;
+}
+
+/* === 価格注釈 === */
+.price-annotation {
+  font-size: 11px;
+  color: #999;
+  line-height: 1.5;
+  margin-top: 2px;
+  margin-bottom: 8px;
+}
+
+/* === 予告パスセクション === */
+.upcoming-section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1565C0;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #E3F2FD;
+  text-align: left;
+}
+
+.upcoming-card {
+  text-align: left;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  background: #F8FAFC;
+  border: 2px solid #E3F2FD;
+  border-radius: 12px;
+}
+
+.upcoming-card-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 6px;
+  white-space: pre-line;
+}
+
+.upcoming-card-price {
+  font-size: 16px;
+  font-weight: 800;
+  color: #1565C0;
+  margin-bottom: 2px;
+}
+
+.upcoming-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.upcoming-card-meta span {
+  font-size: 11px;
+  color: #888;
+  background: #E8EDF2;
+  padding: 2px 8px;
+  border-radius: 10px;
 }

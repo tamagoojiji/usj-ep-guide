@@ -1,0 +1,33 @@
+name: ローチケ EP販売情報取得
+
+on:
+  schedule:
+    # 毎日 9:00 JST (0:00 UTC)
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+    # 手動トリガー
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: チェックアウト
+        uses: actions/checkout@v4
+
+      - name: Node.js セットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 依存パッケージインストール
+        working-directory: scripts
+        run: npm install
+
+      - name: ローチケ EP販売情報取得実行
+        working-directory: scripts
+        env:
+          GAS_WEB_APP_URL: ${{ secrets.GAS_WEB_APP_URL }}
+          GAS_API_KEY: ${{ secrets.GAS_API_KEY }}
+        run: node scrape-lawson.js
