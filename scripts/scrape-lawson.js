@@ -20,7 +20,7 @@ const puppeteer = require("puppeteer");
 // === 設定 ===
 const EP_LIST_URL = "https://l-tike.com/leisure/usj/express_pass/";
 const EP_SEARCH_URL = "https://l-tike.com/search/?keyword=%E3%82%A8%E3%82%AF%E3%82%B9%E3%83%97%E3%83%AC%E3%82%B9+%E3%83%91%E3%82%B9&lcd=&from_date=&to_date=&genre=&sub_genre=&area=";
-const ORDER_URL_BASE = "https://l-tike.com/order/?gLcode=";
+const DETAIL_URL_BASE = "https://l-tike.com/search/?lcd=";
 const WAIT_BETWEEN_REQUESTS_MS = 9000; // HTTP/2エラー回避
 
 // === passId マッピング ===
@@ -247,58 +247,84 @@ async function scrapeEpListPage(browser) {
 }
 
 /**
- * ページからエクスプレスパスのリンクを抽出
+ * EP一覧ページからパス情報を抽出
+ * ローチケのEP一覧ページ構造:
+ *   - セクション見出し（例: "エクスプレス・パス 7"）
+ *   - 各パスの説明テキスト + パス名
+ *   - 「Lコード：XXXXXチケット購入ページへ進む」リンク（href=/search/?lcd=XXXXX）
+ *   - lcd=が複数カンマ区切りの場合あり（例: lcd=50028%2C50015）
  */
 async function extractPassesFromPage(page) {
   return page.evaluate(() => {
     const results = [];
     const seen = new Set();
-    const allLinks = document.querySelectorAll("a");
+    // lcd= または gLcode= を含むリンクを全て取得
+    const links = document.querySelectorAll('a[href*="lcd="], a[href*="gLcode="], a[href*="Lcode="]');
 
-    allLinks.forEach((link) => {
+    links.forEach((link) => {
       const href = link.getAttribute("href") || "";
-      // gLcode=, lcd=, Lcode= パターン、または /order/?gLcode= パターン
-      const lCodeMatch = href.match(/(?:gLcode|lcd|Lcode)=(\d+)/i);
-      if (!lCodeMatch) return;
+      // lcd=XXXXX or lcd=XXXXX%2CYYYYY（カンマ区切り）
+      const lcdParam = href.match(/(?:lcd|gLcode|Lcode)=([^&]+)/i);
+      if (!lcdParam) return;
 
-      const lCode = lCodeMatch[1];
-      if (seen.has(lCode)) return;
-      seen.add(lCode);
+      // カンマ区切りのLコードを分割
+      const lCodes = decodeURIComponent(lcdParam[1]).split(",").map((s) => s.trim()).filter((s) => /^\d+$/.test(s));
+      if (lCodes.length === 0) return;
 
-      // パス名を取得
-      let passName = link.textContent.trim().replace(/\s+/g, " ");
-      // リンク内テキストが短い場合は親要素から取得
-      if (!passName || passName.length < 5) {
-        const parent = link.closest("li, div, article, section, tr");
-        if (parent) {
-          const heading = parent.querySelector("h2, h3, h4, .title, .name, strong, span");
-          if (heading) passName = heading.textContent.trim().replace(/\s+/g, " ");
+      // パス名を取得: リンクの近くのセクションコンテキストから探す
+      let passName = "";
+
+      // 1. リンクの前の兄弟要素や親要素からパス名を探す
+      let container = link.closest("div, li, section, article, td");
+      if (container) {
+        // コンテナ内のテキストから「エクスプレス・パス」を含む部分を抽出
+        const textNodes = container.textContent || "";
+        const nameMatch = textNodes.match(/(ユニバーサル・エクスプレス・パス[^\n]*?)(?:\s*Lコード|$)/);
+        if (nameMatch) {
+          passName = nameMatch[1].trim().replace(/\s+/g, " ");
         }
       }
-      // imgのalt属性
-      if (!passName || passName.length < 5) {
-        const img = link.querySelector("img");
-        if (img && img.alt) passName = img.alt.trim();
+
+      // 2. さらに上の階層で探す
+      if (!passName) {
+        let parent = container ? container.parentElement : link.parentElement;
+        for (let i = 0; i < 5 && parent; i++) {
+          const text = parent.textContent || "";
+          const nameMatch = text.match(/(ユニバーサル・エクスプレス・パス[^「」\n]{3,50})/);
+          if (nameMatch) {
+            passName = nameMatch[1].trim().replace(/\s+/g, " ");
+            break;
+          }
+          parent = parent.parentElement;
+        }
+      }
+
+      // 3. フォールバック: リンクテキストからLコードを除去して使用
+      if (!passName) {
+        passName = link.textContent.trim().replace(/Lコード[：:]\s*\d+[\s,、]+/g, "").replace(/チケット購入ページへ進む/g, "").trim();
       }
 
       // 価格を取得
       let minPrice = null;
-      const parent = link.closest("li, div, article, section, tr");
-      if (parent) {
-        const priceText = parent.textContent;
-        const priceMatch = priceText.match(/([0-9,]+)\s*円/);
-        if (priceMatch) {
-          const price = parseInt(priceMatch[1].replace(/,/g, ""), 10);
-          if (price >= 5000 && price <= 100000) {
-            minPrice = price;
+      if (container) {
+        const priceText = container.textContent;
+        const priceMatches = priceText.match(/([0-9,]+)\s*円/g);
+        if (priceMatches) {
+          const prices = priceMatches
+            .map((p) => parseInt(p.replace(/[,円\s]/g, ""), 10))
+            .filter((p) => p >= 5000 && p <= 100000);
+          if (prices.length > 0) {
+            minPrice = Math.min(...prices);
           }
         }
       }
 
-      // エクスプレスパス関連のリンクのみ
-      if (passName && (passName.includes("エクスプレス") || passName.includes("Express"))) {
-        results.push({ passName, lCode, minPrice });
-      }
+      // 各Lコードを個別に登録
+      lCodes.forEach((lCode) => {
+        if (seen.has(lCode)) return;
+        seen.add(lCode);
+        results.push({ passName: passName || `Lコード:${lCode}`, lCode, minPrice });
+      });
     });
 
     return results;
@@ -316,7 +342,7 @@ async function scrapeSearchPage(browser, lCode, retryCount = 0) {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     );
 
-    const url = ORDER_URL_BASE + lCode;
+    const url = DETAIL_URL_BASE + lCode;
     const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
 
     if (response && response.status() >= 500 && retryCount < 3) {
