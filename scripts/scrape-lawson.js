@@ -19,7 +19,7 @@ const puppeteer = require("puppeteer");
 
 // === 設定 ===
 const EP_LIST_URL = "https://l-tike.com/leisure/usj/express_pass/";
-const SEARCH_URL_BASE = "https://l-tike.com/search/?lcd=";
+const ORDER_URL_BASE = "https://l-tike.com/order/?gLcode=";
 const WAIT_BETWEEN_REQUESTS_MS = 9000; // HTTP/2エラー回避
 
 // === passId マッピング ===
@@ -84,7 +84,39 @@ async function main() {
     console.log(`  ${passList.length}件のパスを検出\n`);
 
     if (passList.length === 0) {
-      console.log("パスが見つかりませんでした。ページ構造が変更された可能性があります。");
+      console.log("パスが見つかりませんでした。ページ構造を調査中...");
+      // デバッグ: ページ内のリンクを調査
+      const debugPage = await browser.newPage();
+      try {
+        await debugPage.setUserAgent(
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        );
+        await debugPage.goto(EP_LIST_URL, { waitUntil: "networkidle0", timeout: 60000 });
+        await sleep(5000);
+        const debugInfo = await debugPage.evaluate(() => {
+          const allLinks = Array.from(document.querySelectorAll("a")).slice(0, 50);
+          return {
+            title: document.title,
+            linkCount: document.querySelectorAll("a").length,
+            sampleLinks: allLinks.map((a) => ({
+              href: a.getAttribute("href") || "",
+              text: a.textContent.trim().substring(0, 60),
+            })),
+            bodySnippet: document.body.textContent.substring(0, 500),
+          };
+        });
+        console.log("  ページタイトル:", debugInfo.title);
+        console.log("  リンク総数:", debugInfo.linkCount);
+        console.log("  本文冒頭:", debugInfo.bodySnippet);
+        console.log("  リンクサンプル:");
+        debugInfo.sampleLinks.forEach((l) => {
+          if (l.href.includes("usj") || l.href.includes("express") || l.href.includes("Lcode") || l.href.includes("gLcode") || l.href.includes("lcd") || l.href.includes("order")) {
+            console.log(`    [関連] ${l.text} → ${l.href}`);
+          }
+        });
+      } finally {
+        await debugPage.close();
+      }
       process.exit(0);
     }
 
@@ -168,19 +200,19 @@ async function scrapeEpListPage(browser) {
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     );
-    await page.goto(EP_LIST_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await sleep(3000);
+    await page.goto(EP_LIST_URL, { waitUntil: "networkidle0", timeout: 60000 });
+    await sleep(5000);
 
-    // ページからパス情報を抽出
+    // ページからパス情報を抽出（gLcode= または lcd= リンクを検出）
     const passes = await page.evaluate(() => {
       const results = [];
-      // ローチケのEP一覧ページのリンクからLコードとパス名を取得
-      const links = document.querySelectorAll('a[href*="/search/?lcd="], a[href*="lcd="]');
+      const links = document.querySelectorAll('a[href*="gLcode="], a[href*="lcd="]');
       const seen = new Set();
 
       links.forEach((link) => {
         const href = link.getAttribute("href") || "";
-        const lCodeMatch = href.match(/lcd=(\d+)/);
+        // gLcode= または lcd= からLコードを抽出
+        const lCodeMatch = href.match(/(?:gLcode|lcd)=(\d+)/);
         if (!lCodeMatch) return;
 
         const lCode = lCodeMatch[1];
@@ -190,16 +222,21 @@ async function scrapeEpListPage(browser) {
         // パス名を取得（リンク内テキストまたは親要素）
         let passName = link.textContent.trim();
         if (!passName || passName.length < 5) {
-          const parent = link.closest("li, div, article");
+          const parent = link.closest("li, div, article, section");
           if (parent) {
-            const heading = parent.querySelector("h2, h3, h4, .title, .name");
+            const heading = parent.querySelector("h2, h3, h4, .title, .name, strong");
             if (heading) passName = heading.textContent.trim();
           }
+        }
+        // さらにフォールバック: imgのalt属性
+        if (!passName || passName.length < 5) {
+          const img = link.querySelector("img");
+          if (img && img.alt) passName = img.alt.trim();
         }
 
         // 価格を取得（リンクの近くにある価格表記）
         let minPrice = null;
-        const parent = link.closest("li, div, article");
+        const parent = link.closest("li, div, article, section");
         if (parent) {
           const priceText = parent.textContent;
           const priceMatch = priceText.match(/([0-9,]+)\s*円/);
@@ -233,7 +270,7 @@ async function scrapeSearchPage(browser, lCode, retryCount = 0) {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     );
 
-    const url = SEARCH_URL_BASE + lCode;
+    const url = ORDER_URL_BASE + lCode;
     const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
 
     if (response && response.status() >= 500 && retryCount < 3) {
