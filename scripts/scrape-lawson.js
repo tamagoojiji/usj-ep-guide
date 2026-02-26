@@ -10,24 +10,21 @@
  *
  * 処理フロー:
  * 1. ローチケ EP一覧ページをスクレイプ（パス名、Lコード、最低価格）
- * 2. 各Lコードの検索ページをスクレイプ（公演日、受付期間、販売状況）
- * 3. passIdマッピング（キーワードマッチ）
- * 4. GASへPOST送信
+ * 2. passIdマッピング（キーワードマッチ）
+ * 3. GASへPOST送信
  */
 
 const puppeteer = require("puppeteer");
 
 // === 設定 ===
 const EP_LIST_URL = "https://l-tike.com/leisure/usj/express_pass/";
-const EP_SEARCH_URL = "https://l-tike.com/search/?keyword=%E3%82%A8%E3%82%AF%E3%82%B9%E3%83%97%E3%83%AC%E3%82%B9+%E3%83%91%E3%82%B9&lcd=&from_date=&to_date=&genre=&sub_genre=&area=";
-const DETAIL_URL_BASE = "https://l-tike.com/search/?lcd=";
-const WAIT_BETWEEN_REQUESTS_MS = 9000; // HTTP/2エラー回避
 
 // === passId マッピング ===
 // パス名キーワード → 既存passIdの対応表
 const PASS_ID_MAPPING = [
   { keywords: ["プレミアム"], passId: "premium" },
-  { keywords: ["トロッコ", "セレクション", "パス 7", "パス7"], passId: "ep7_trolley_selection" },
+  { keywords: ["バラエティ・スタンダード"], passId: "ep7_trolley_selection" },
+  { keywords: ["XRライド", "セレクション"], passId: "ep7_trolley_selection" },
   { keywords: ["ミニオン", "ハリウッド・ドリーム"], passId: "ep4_minion_hollywood" },
   { keywords: ["レース", "トロッコ"], passId: "ep4_race_trolley" },
   { keywords: ["トロッコ", "ジョーズ"], passId: "ep4_trolley_jaws" },
@@ -43,6 +40,8 @@ const PASS_ID_MAPPING = [
   { keywords: ["レース", "シアター"], passId: "ep4_race_theater" },
   { keywords: ["バックドロップ", "レース"], passId: "ep4_backdrop_race" },
   { keywords: ["4-D", "バックドロップ"], passId: "ep4_4d_backdrop" },
+  { keywords: ["トロッコ", "ファン"], passId: "ep4_trolley_fun" },
+  { keywords: ["ファン・バラエティ"], passId: "ep4_fun_variety" },
 ];
 
 /**
@@ -54,7 +53,7 @@ function matchPassId(passName) {
     const allMatch = mapping.keywords.every((kw) => name.includes(kw));
     if (allMatch) return mapping.passId;
   }
-  return null; // マッチなし → 予告パス（新規扱い）
+  return null;
 }
 
 // === メイン処理 ===
@@ -86,73 +85,42 @@ async function main() {
     console.log(`  ${passList.length}件のパスを検出\n`);
 
     if (passList.length === 0) {
-      console.log("パスが見つかりませんでした。上記のデバッグ情報を確認してください。");
+      console.log("パスが見つかりませんでした。");
       process.exit(0);
     }
 
-    // Step 2: 各Lコードの詳細ページをスクレイプ
-    console.log("Step 2: 各パスの詳細情報を取得...\n");
-    const detailedList = [];
-
-    for (let i = 0; i < passList.length; i++) {
-      const pass = passList[i];
-      console.log(`  [${i + 1}/${passList.length}] ${pass.passName} (${pass.lCode})`);
-
-      try {
-        const detail = await scrapeSearchPage(browser, pass.lCode);
-        const passId = matchPassId(pass.passName);
-
-        detailedList.push({
-          passId: passId || "",
-          lCode: pass.lCode,
-          passName: pass.passName,
-          salesStatus: detail.salesStatus || "",
-          salesFrom: detail.salesFrom || "",
-          salesTo: detail.salesTo || "",
-          performanceFrom: detail.performanceFrom || "",
-          performanceTo: detail.performanceTo || "",
-          minPrice: pass.minPrice || detail.minPrice || null,
-        });
-
-        console.log(`    状態: ${detail.salesStatus || "不明"} / 価格: ${pass.minPrice || "不明"} / passId: ${passId || "(新規)"}`);
-      } catch (err) {
-        console.error(`    エラー: ${err.message}`);
-        // エラーでも一覧情報だけで登録
-        detailedList.push({
-          passId: matchPassId(pass.passName) || "",
-          lCode: pass.lCode,
-          passName: pass.passName,
-          salesStatus: "",
-          salesFrom: "",
-          salesTo: "",
-          performanceFrom: "",
-          performanceTo: "",
-          minPrice: pass.minPrice || null,
-        });
-      }
-
-      // リクエスト間隔
-      if (i < passList.length - 1) {
-        await sleep(WAIT_BETWEEN_REQUESTS_MS);
-      }
-    }
+    // Step 2: passIdマッピング + データ整形
+    console.log("Step 2: passIdマッピング...\n");
+    const dataList = passList.map((pass) => {
+      const passId = matchPassId(pass.passName);
+      console.log(`  ${pass.passName} (${pass.lCode}) → ${passId || "(新規)"}`);
+      return {
+        passId: passId || "",
+        lCode: pass.lCode,
+        passName: pass.passName,
+        salesStatus: "販売中", // EP一覧ページに掲載 = 販売中
+        salesFrom: "",
+        salesTo: "",
+        performanceFrom: "",
+        performanceTo: "",
+        minPrice: pass.minPrice || null,
+      };
+    });
 
     // Step 3: GASへPOST送信
-    console.log(`\nStep 3: GASへデータ送信 (${detailedList.length}件)...`);
-    const gasResult = await postToGas(GAS_URL, API_KEY, detailedList);
+    console.log(`\nStep 3: GASへデータ送信 (${dataList.length}件)...`);
+    const gasResult = await postToGas(GAS_URL, API_KEY, dataList);
     console.log(`  GAS応答: ${JSON.stringify(gasResult)}`);
 
     // サマリー
     console.log("\n=== 結果サマリー ===");
-    const mapped = detailedList.filter((d) => d.passId).length;
-    const unmapped = detailedList.filter((d) => !d.passId).length;
-    console.log(`合計: ${detailedList.length}件 (既存パス: ${mapped}, 予告パス: ${unmapped})`);
-
-    detailedList.forEach((d) => {
-      const status = d.salesStatus || "不明";
+    const mapped = dataList.filter((d) => d.passId).length;
+    const unmapped = dataList.filter((d) => !d.passId).length;
+    console.log(`合計: ${dataList.length}件 (既存パス: ${mapped}, 予告パス: ${unmapped})`);
+    dataList.forEach((d) => {
       const price = d.minPrice ? `¥${d.minPrice.toLocaleString()}~` : "価格未定";
       const id = d.passId || "(新規)";
-      console.log(`  ${d.passName} [${status}] ${price} → ${id}`);
+      console.log(`  ${d.passName} [${d.salesStatus}] ${price} → ${id}`);
     });
 
   } finally {
@@ -170,25 +138,106 @@ async function scrapeEpListPage(browser) {
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     );
-    // EP一覧ページを試す
     await page.goto(EP_LIST_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
     await sleep(8000);
 
-    let passes = await extractPassesFromPage(page);
-    console.log(`  一覧ページ: ${passes.length}件検出`);
+    const passes = await page.evaluate(() => {
+      const results = [];
+      const seen = new Set();
 
-    // 0件の場合のデバッグ情報出力
+      // lcd= を含むリンクを全て取得
+      const links = document.querySelectorAll('a[href*="lcd="]');
+
+      links.forEach((link) => {
+        const href = link.getAttribute("href") || "";
+        const lcdParam = href.match(/lcd=([^&]+)/i);
+        if (!lcdParam) return;
+
+        // カンマ区切りのLコードを分割
+        const lCodes = decodeURIComponent(lcdParam[1]).split(",").map((s) => s.trim()).filter((s) => /^\d+$/.test(s));
+        if (lCodes.length === 0) return;
+
+        // パス名: リンクの前にあるテキストから「パス X ～XXX～」パターンを取得
+        let passName = "";
+
+        // 方法1: リンクの直前の兄弟要素からパス名を探す
+        let prevEl = link.previousElementSibling;
+        for (let i = 0; i < 10 && prevEl; i++) {
+          const text = prevEl.textContent || "";
+          // 「パス 4 ～XXX～」または「パス 7 ～XXX～」パターン
+          const nameMatch = text.match(/(ユニバーサル・エクスプレス・パス\s*\d+\s*～[^～]+～)/);
+          if (nameMatch) {
+            passName = nameMatch[1].trim().replace(/\s+/g, " ");
+            break;
+          }
+          prevEl = prevEl.previousElementSibling;
+        }
+
+        // 方法2: 親要素のテキストから探す（より狭い範囲）
+        if (!passName) {
+          let parent = link.parentElement;
+          for (let i = 0; i < 3 && parent; i++) {
+            const text = parent.textContent || "";
+            const nameMatch = text.match(/(ユニバーサル・エクスプレス・パス\s*\d+\s*～[^～]+～)/);
+            if (nameMatch) {
+              passName = nameMatch[1].trim().replace(/\s+/g, " ");
+              break;
+            }
+            parent = parent.parentElement;
+          }
+        }
+
+        // 方法3: リンクテキストからLコード部分を除去
+        if (!passName) {
+          const linkText = link.textContent.trim();
+          if (linkText.includes("エクスプレス")) {
+            passName = linkText.replace(/Lコード[：:][^チ]+チケット購入ページへ進む/g, "").trim();
+          }
+        }
+
+        // 価格を取得
+        let minPrice = null;
+        let parent = link.parentElement;
+        for (let i = 0; i < 3 && parent; i++) {
+          const priceMatches = parent.textContent.match(/([0-9,]+)\s*円/g);
+          if (priceMatches) {
+            const prices = priceMatches
+              .map((p) => parseInt(p.replace(/[,円\s]/g, ""), 10))
+              .filter((p) => p >= 5000 && p <= 100000);
+            if (prices.length > 0) {
+              minPrice = Math.min(...prices);
+              break;
+            }
+          }
+          parent = parent.parentElement;
+        }
+
+        // 各Lコードを個別に登録
+        lCodes.forEach((lCode) => {
+          if (seen.has(lCode)) return;
+          seen.add(lCode);
+          results.push({
+            passName: passName || `エクスプレス・パス（Lコード:${lCode}）`,
+            lCode,
+            minPrice,
+          });
+        });
+      });
+
+      return results;
+    });
+
+    // デバッグ: 検出内容を出力
     if (passes.length === 0) {
       const debugInfo = await page.evaluate(() => {
         const allLinks = Array.from(document.querySelectorAll("a"));
         return {
           title: document.title,
-          url: location.href,
           linkCount: allLinks.length,
           relatedLinks: allLinks.map((a) => ({
             href: a.getAttribute("href") || "",
             text: a.textContent.trim().substring(0, 100),
-          })).filter((l) => l.href.includes("order") || l.href.includes("code") || l.href.includes("lcd") || l.href.includes("mevent") || l.text.includes("エクスプレス") || l.text.includes("パス")),
+          })).filter((l) => l.href.includes("lcd") || l.href.includes("order") || l.text.includes("エクスプレス") || l.text.includes("Lコード")),
         };
       });
       console.log("  [デバッグ] ページタイトル:", debugInfo.title);
@@ -199,212 +248,7 @@ async function scrapeEpListPage(browser) {
       });
     }
 
-    // ページを閉じてから検索ページへ（HTTP/2エラー回避）
-    await page.close();
-
-    if (passes.length === 0) {
-      console.log("  → 検索ページにフォールバック（10秒待機後）...");
-      await sleep(10000);
-      const searchPage = await browser.newPage();
-      try {
-        await searchPage.setUserAgent(
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-        );
-        await searchPage.goto(EP_SEARCH_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
-        await sleep(8000);
-        passes = await extractPassesFromPage(searchPage);
-        console.log(`  検索ページ: ${passes.length}件検出`);
-
-        if (passes.length === 0) {
-          const debugInfo2 = await searchPage.evaluate(() => {
-            const allLinks = Array.from(document.querySelectorAll("a"));
-            return {
-              title: document.title,
-              linkCount: allLinks.length,
-              relatedLinks: allLinks.map((a) => ({
-                href: a.getAttribute("href") || "",
-                text: a.textContent.trim().substring(0, 100),
-              })).filter((l) => l.href.includes("order") || l.href.includes("code") || l.href.includes("lcd") || l.href.includes("mevent") || l.text.includes("エクスプレス") || l.text.includes("パス")),
-            };
-          });
-          console.log("  [デバッグ] 検索ページタイトル:", debugInfo2.title);
-          console.log("  [デバッグ] リンク総数:", debugInfo2.linkCount);
-          console.log("  [デバッグ] 関連リンク:");
-          debugInfo2.relatedLinks.forEach((l) => {
-            console.log(`    ${l.text} → ${l.href}`);
-          });
-        }
-      } finally {
-        await searchPage.close();
-      }
-    }
-
     return passes;
-  } catch (err) {
-    console.error(`  ページ読込エラー: ${err.message}`);
-    return [];
-  }
-}
-
-/**
- * EP一覧ページからパス情報を抽出
- * ローチケのEP一覧ページ構造:
- *   - セクション見出し（例: "エクスプレス・パス 7"）
- *   - 各パスの説明テキスト + パス名
- *   - 「Lコード：XXXXXチケット購入ページへ進む」リンク（href=/search/?lcd=XXXXX）
- *   - lcd=が複数カンマ区切りの場合あり（例: lcd=50028%2C50015）
- */
-async function extractPassesFromPage(page) {
-  return page.evaluate(() => {
-    const results = [];
-    const seen = new Set();
-    // lcd= または gLcode= を含むリンクを全て取得
-    const links = document.querySelectorAll('a[href*="lcd="], a[href*="gLcode="], a[href*="Lcode="]');
-
-    links.forEach((link) => {
-      const href = link.getAttribute("href") || "";
-      // lcd=XXXXX or lcd=XXXXX%2CYYYYY（カンマ区切り）
-      const lcdParam = href.match(/(?:lcd|gLcode|Lcode)=([^&]+)/i);
-      if (!lcdParam) return;
-
-      // カンマ区切りのLコードを分割
-      const lCodes = decodeURIComponent(lcdParam[1]).split(",").map((s) => s.trim()).filter((s) => /^\d+$/.test(s));
-      if (lCodes.length === 0) return;
-
-      // パス名を取得: リンクの近くのセクションコンテキストから探す
-      let passName = "";
-
-      // 1. リンクの前の兄弟要素や親要素からパス名を探す
-      let container = link.closest("div, li, section, article, td");
-      if (container) {
-        // コンテナ内のテキストから「エクスプレス・パス」を含む部分を抽出
-        const textNodes = container.textContent || "";
-        const nameMatch = textNodes.match(/(ユニバーサル・エクスプレス・パス[^\n]*?)(?:\s*Lコード|$)/);
-        if (nameMatch) {
-          passName = nameMatch[1].trim().replace(/\s+/g, " ");
-        }
-      }
-
-      // 2. さらに上の階層で探す
-      if (!passName) {
-        let parent = container ? container.parentElement : link.parentElement;
-        for (let i = 0; i < 5 && parent; i++) {
-          const text = parent.textContent || "";
-          const nameMatch = text.match(/(ユニバーサル・エクスプレス・パス[^「」\n]{3,50})/);
-          if (nameMatch) {
-            passName = nameMatch[1].trim().replace(/\s+/g, " ");
-            break;
-          }
-          parent = parent.parentElement;
-        }
-      }
-
-      // 3. フォールバック: リンクテキストからLコードを除去して使用
-      if (!passName) {
-        passName = link.textContent.trim().replace(/Lコード[：:]\s*\d+[\s,、]+/g, "").replace(/チケット購入ページへ進む/g, "").trim();
-      }
-
-      // 価格を取得
-      let minPrice = null;
-      if (container) {
-        const priceText = container.textContent;
-        const priceMatches = priceText.match(/([0-9,]+)\s*円/g);
-        if (priceMatches) {
-          const prices = priceMatches
-            .map((p) => parseInt(p.replace(/[,円\s]/g, ""), 10))
-            .filter((p) => p >= 5000 && p <= 100000);
-          if (prices.length > 0) {
-            minPrice = Math.min(...prices);
-          }
-        }
-      }
-
-      // 各Lコードを個別に登録
-      lCodes.forEach((lCode) => {
-        if (seen.has(lCode)) return;
-        seen.add(lCode);
-        results.push({ passName: passName || `Lコード:${lCode}`, lCode, minPrice });
-      });
-    });
-
-    return results;
-  });
-}
-
-/**
- * Lコード検索ページをスクレイプして詳細情報を取得
- * @return {Object} { salesStatus, salesFrom, salesTo, performanceFrom, performanceTo, minPrice }
- */
-async function scrapeSearchPage(browser, lCode, retryCount = 0) {
-  const page = await browser.newPage();
-  try {
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-    );
-
-    const url = DETAIL_URL_BASE + lCode;
-    const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-
-    if (response && response.status() >= 500 && retryCount < 3) {
-      console.log(`    HTTP ${response.status()} → ${retryCount + 1}回目リトライ (10秒後)`);
-      await sleep(10000);
-      // finally で page.close() されるため、ここでは閉じない
-      return scrapeSearchPage(browser, lCode, retryCount + 1);
-    }
-
-    await sleep(3000);
-
-    // ページから詳細情報を抽出
-    const detail = await page.evaluate(() => {
-      const result = {
-        salesStatus: "",
-        salesFrom: "",
-        salesTo: "",
-        performanceFrom: "",
-        performanceTo: "",
-        minPrice: null,
-      };
-
-      const bodyText = document.body.textContent || "";
-
-      // 販売状況の判定
-      if (bodyText.includes("販売中") || bodyText.includes("好評販売中")) {
-        result.salesStatus = "販売中";
-      } else if (bodyText.includes("販売予定") || bodyText.includes("近日発売")) {
-        result.salesStatus = "販売予定";
-      } else if (bodyText.includes("受付終了") || bodyText.includes("販売終了")) {
-        result.salesStatus = "受付終了";
-      }
-
-      // 受付期間（「受付期間」「販売期間」の近くの日付）
-      const salesPeriodMatch = bodyText.match(/(?:受付|販売)期間[：:\s]*(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})日?\s*[〜～~―—-]\s*(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})日?/);
-      if (salesPeriodMatch) {
-        result.salesFrom = `${salesPeriodMatch[1]}-${salesPeriodMatch[2].padStart(2, "0")}-${salesPeriodMatch[3].padStart(2, "0")}`;
-        result.salesTo = `${salesPeriodMatch[4]}-${salesPeriodMatch[5].padStart(2, "0")}-${salesPeriodMatch[6].padStart(2, "0")}`;
-      }
-
-      // 公演期間（「公演」「利用」の近くの日付）
-      const perfPeriodMatch = bodyText.match(/(?:公演|利用|入場)期間[：:\s]*(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})日?\s*[〜～~―—-]\s*(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})日?/);
-      if (perfPeriodMatch) {
-        result.performanceFrom = `${perfPeriodMatch[1]}-${perfPeriodMatch[2].padStart(2, "0")}-${perfPeriodMatch[3].padStart(2, "0")}`;
-        result.performanceTo = `${perfPeriodMatch[4]}-${perfPeriodMatch[5].padStart(2, "0")}-${perfPeriodMatch[6].padStart(2, "0")}`;
-      }
-
-      // 価格
-      const priceMatches = bodyText.match(/([0-9,]+)\s*円/g);
-      if (priceMatches) {
-        const prices = priceMatches
-          .map((p) => parseInt(p.replace(/[,円\s]/g, ""), 10))
-          .filter((p) => p >= 5000 && p <= 100000);
-        if (prices.length > 0) {
-          result.minPrice = Math.min(...prices);
-        }
-      }
-
-      return result;
-    });
-
-    return detail;
   } finally {
     await page.close();
   }
@@ -412,7 +256,8 @@ async function scrapeSearchPage(browser, lCode, retryCount = 0) {
 
 /**
  * GAS Web App にローチケデータをPOST
- * GASは302リダイレクトを返し、fetch()はPOST→GETに変換するため手動リダイレクト対応
+ * GASは302リダイレクトを返す。fetch()はPOST→GETに変換するが、
+ * doPost()は最初のリクエストで実行されるため redirect: "follow" で問題ない
  */
 async function postToGas(gasUrl, apiKey, items) {
   const body = JSON.stringify({
@@ -421,37 +266,22 @@ async function postToGas(gasUrl, apiKey, items) {
     data: items,
   });
 
-  // 1回目: manual redirect でリダイレクトURLを取得
   const response = await fetch(gasUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: body,
-    redirect: "manual",
+    redirect: "follow",
   });
 
-  // リダイレクト(302)の場合、リダイレクト先に再度POST
-  if (response.status === 302 || response.status === 301) {
-    const redirectUrl = response.headers.get("location");
-    if (!redirectUrl) {
-      throw new Error("GAS APIリダイレクト先URLが取得できません");
-    }
-    const response2 = await fetch(redirectUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: body,
-      redirect: "follow",
-    });
-    if (!response2.ok) {
-      throw new Error(`GAS APIエラー: ${response2.status} ${response2.statusText}`);
-    }
-    return await response2.json();
+  // GASのリダイレクト後はtext/htmlを返す場合があるため、テキストで取得して解析
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    // JSON解析失敗時はそのまま返す
+    console.log(`  GAS応答(raw): ${text.substring(0, 200)}`);
+    return { status: response.ok ? "ok" : "error", rawResponse: text.substring(0, 200) };
   }
-
-  if (!response.ok) {
-    throw new Error(`GAS APIエラー: ${response.status} ${response.statusText}`);
-  }
-
-  return await response.json();
 }
 
 function sleep(ms) {
