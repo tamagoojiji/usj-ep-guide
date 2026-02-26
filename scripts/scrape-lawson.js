@@ -256,8 +256,9 @@ async function scrapeEpListPage(browser) {
 
 /**
  * GAS Web App にローチケデータをPOST
- * GASは302リダイレクトを返す。fetch()はPOST→GETに変換するが、
- * doPost()は最初のリクエストで実行されるため redirect: "follow" で問題ない
+ * GASは302リダイレクトを返す。
+ * 1. POST(redirect:manual) → doPost()実行 → 302レスポンス
+ * 2. GET(redirect:follow) → リダイレクト先からdoPost()の結果を取得
  */
 async function postToGas(gasUrl, apiKey, items) {
   const body = JSON.stringify({
@@ -266,19 +267,37 @@ async function postToGas(gasUrl, apiKey, items) {
     data: items,
   });
 
+  // Step 1: POSTでデータ送信（doPost実行）→ 302リダイレクト取得
   const response = await fetch(gasUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: body,
-    redirect: "follow",
+    redirect: "manual",
   });
 
-  // GASのリダイレクト後はtext/htmlを返す場合があるため、テキストで取得して解析
+  // Step 2: リダイレクト先をGETで取得（doPostの実行結果）
+  if (response.status === 302 || response.status === 301) {
+    const redirectUrl = response.headers.get("location");
+    if (!redirectUrl) {
+      throw new Error("GAS APIリダイレクト先URLが取得できません");
+    }
+    const response2 = await fetch(redirectUrl, {
+      method: "GET",
+      redirect: "follow",
+    });
+    const text = await response2.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      console.log(`  GAS応答(raw): ${text.substring(0, 200)}`);
+      return { status: response2.ok ? "ok" : "error", rawResponse: text.substring(0, 200) };
+    }
+  }
+
   const text = await response.text();
   try {
     return JSON.parse(text);
   } catch {
-    // JSON解析失敗時はそのまま返す
     console.log(`  GAS応答(raw): ${text.substring(0, 200)}`);
     return { status: response.ok ? "ok" : "error", rawResponse: text.substring(0, 200) };
   }
