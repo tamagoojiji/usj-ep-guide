@@ -813,6 +813,48 @@ body {
   width: 100%;
 }
 
+/* === 情報ボックス（トップ画面） === */
+.info-box {
+  margin-top: 20px;
+  padding: 14px 16px;
+  background: #E8F5E9;
+  border: 1px solid #A5D6A7;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.info-box-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #2E7D32;
+  margin-bottom: 8px;
+}
+
+.info-box-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.info-box-list li {
+  font-size: 12px;
+  color: #333;
+  line-height: 1.7;
+  padding-left: 1em;
+  text-indent: -1em;
+  margin-bottom: 4px;
+}
+
+.info-box-list li::before {
+  content: "✓ ";
+  color: #2E7D32;
+  font-weight: 700;
+}
+
+.info-box-list li:last-child {
+  margin-bottom: 0;
+}
+
 /* === 注意書きボックス（強調版） === */
 .disclaimer-box {
   margin-top: 20px;
