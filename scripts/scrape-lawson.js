@@ -91,8 +91,8 @@ async function main() {
         await debugPage.setUserAgent(
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         );
-        await debugPage.goto(EP_LIST_URL, { waitUntil: "networkidle0", timeout: 60000 });
-        await sleep(5000);
+        await debugPage.goto(EP_LIST_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+        await sleep(8000);
         const debugInfo = await debugPage.evaluate(() => {
           const allLinks = Array.from(document.querySelectorAll("a")).slice(0, 50);
           return {
@@ -200,8 +200,9 @@ async function scrapeEpListPage(browser) {
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     );
-    await page.goto(EP_LIST_URL, { waitUntil: "networkidle0", timeout: 60000 });
-    await sleep(5000);
+    await page.goto(EP_LIST_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+    // JS描画完了を待つ（ローチケはSPAでコンテンツを遅延描画）
+    await sleep(8000);
 
     // ページからパス情報を抽出（gLcode= または lcd= リンクを検出）
     const passes = await page.evaluate(() => {
