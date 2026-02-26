@@ -276,8 +276,10 @@ async function postToGas(gasUrl, apiKey, items) {
   });
 
   // Step 2: リダイレクト先をGETで取得（doPostの実行結果）
+  console.log(`  POST応答ステータス: ${response.status}`);
   if (response.status === 302 || response.status === 301) {
     const redirectUrl = response.headers.get("location");
+    console.log(`  リダイレクト先: ${redirectUrl ? redirectUrl.substring(0, 100) : "なし"}`);
     if (!redirectUrl) {
       throw new Error("GAS APIリダイレクト先URLが取得できません");
     }
