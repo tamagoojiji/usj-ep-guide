@@ -75,6 +75,7 @@ async function main() {
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
+      "--disable-http2",
     ],
   });
 
@@ -169,23 +170,14 @@ async function scrapeEpListPage(browser) {
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     );
-    // まずEP一覧ページを試す
+    // EP一覧ページを試す
     await page.goto(EP_LIST_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
     await sleep(8000);
 
     let passes = await extractPassesFromPage(page);
     console.log(`  一覧ページ: ${passes.length}件検出`);
 
-    // 0件の場合、検索ページにフォールバック
-    if (passes.length === 0) {
-      console.log("  → 検索ページにフォールバック...");
-      await page.goto(EP_SEARCH_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
-      await sleep(8000);
-      passes = await extractPassesFromPage(page);
-      console.log(`  検索ページ: ${passes.length}件検出`);
-    }
-
-    // それでも0件の場合、全リンクからデバッグ情報を出力
+    // 0件の場合のデバッグ情報出力
     if (passes.length === 0) {
       const debugInfo = await page.evaluate(() => {
         const allLinks = Array.from(document.querySelectorAll("a"));
@@ -193,26 +185,64 @@ async function scrapeEpListPage(browser) {
           title: document.title,
           url: location.href,
           linkCount: allLinks.length,
-          allHrefs: allLinks.map((a) => ({
+          relatedLinks: allLinks.map((a) => ({
             href: a.getAttribute("href") || "",
             text: a.textContent.trim().substring(0, 100),
           })).filter((l) => l.href.includes("order") || l.href.includes("code") || l.href.includes("lcd") || l.href.includes("mevent") || l.text.includes("エクスプレス") || l.text.includes("パス")),
-          bodySnippet: (document.body.textContent || "").substring(0, 1000).replace(/\s+/g, " "),
         };
       });
       console.log("  [デバッグ] ページタイトル:", debugInfo.title);
-      console.log("  [デバッグ] URL:", debugInfo.url);
       console.log("  [デバッグ] リンク総数:", debugInfo.linkCount);
-      console.log("  [デバッグ] 本文冒頭:", debugInfo.bodySnippet.substring(0, 500));
       console.log("  [デバッグ] 関連リンク:");
-      debugInfo.allHrefs.forEach((l) => {
+      debugInfo.relatedLinks.forEach((l) => {
         console.log(`    ${l.text} → ${l.href}`);
       });
     }
 
-    return passes;
-  } finally {
+    // ページを閉じてから検索ページへ（HTTP/2エラー回避）
     await page.close();
+
+    if (passes.length === 0) {
+      console.log("  → 検索ページにフォールバック（10秒待機後）...");
+      await sleep(10000);
+      const searchPage = await browser.newPage();
+      try {
+        await searchPage.setUserAgent(
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        );
+        await searchPage.goto(EP_SEARCH_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+        await sleep(8000);
+        passes = await extractPassesFromPage(searchPage);
+        console.log(`  検索ページ: ${passes.length}件検出`);
+
+        if (passes.length === 0) {
+          const debugInfo2 = await searchPage.evaluate(() => {
+            const allLinks = Array.from(document.querySelectorAll("a"));
+            return {
+              title: document.title,
+              linkCount: allLinks.length,
+              relatedLinks: allLinks.map((a) => ({
+                href: a.getAttribute("href") || "",
+                text: a.textContent.trim().substring(0, 100),
+              })).filter((l) => l.href.includes("order") || l.href.includes("code") || l.href.includes("lcd") || l.href.includes("mevent") || l.text.includes("エクスプレス") || l.text.includes("パス")),
+            };
+          });
+          console.log("  [デバッグ] 検索ページタイトル:", debugInfo2.title);
+          console.log("  [デバッグ] リンク総数:", debugInfo2.linkCount);
+          console.log("  [デバッグ] 関連リンク:");
+          debugInfo2.relatedLinks.forEach((l) => {
+            console.log(`    ${l.text} → ${l.href}`);
+          });
+        }
+      } finally {
+        await searchPage.close();
+      }
+    }
+
+    return passes;
+  } catch (err) {
+    console.error(`  ページ読込エラー: ${err.message}`);
+    return [];
   }
 }
 
