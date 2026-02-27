@@ -929,14 +929,14 @@
   // === 期限切れチェック ===
   function isExpired() {
     var now = new Date();
-    var expiry = new Date(2026, 3, 16);
+    var expiry = new Date(2026, 5, 1);
     return now >= expiry;
   }
 
   // ============================================================
   //  パスデータをAPI取得（キャッシュ優先 + フォールバック付き）
   // ============================================================
-  var PASS_CACHE_KEY = "ep_pass_cache_v3";
+  var PASS_CACHE_KEY = "ep_pass_cache_v4";
   var PASS_CACHE_MAX_AGE = 6 * 60 * 60 * 1000; // 6時間
 
   function loadPassData(callback) {
