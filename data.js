@@ -105,7 +105,7 @@ var FALLBACK_PASSES = [
     color: "#4A90D9",
     colorBg: "#EBF3FB",
     borderColor: "#4A90D9",
-    minHeight: 122,
+    minHeight: 107,
     areaEntry: ["nintendo", "harrypotter"],
     attractions: {
       fixed: [
@@ -188,7 +188,7 @@ var FALLBACK_PASSES = [
     color: "#27AE60",
     colorBg: "#E8F8EF",
     borderColor: "#27AE60",
-    minHeight: 122,
+    minHeight: 107,
     areaEntry: ["nintendo"],
     attractions: {
       fixed: [
@@ -260,7 +260,7 @@ var FALLBACK_PASSES = [
     color: "#27AE60",
     colorBg: "#E8F8EF",
     borderColor: "#27AE60",
-    minHeight: 122,
+    minHeight: 107,
     areaEntry: ["nintendo"],
     attractions: {
       fixed: [
@@ -513,7 +513,7 @@ var FALLBACK_PASSES = [
     color: "#27AE60",
     colorBg: "#E8F8EF",
     borderColor: "#27AE60",
-    minHeight: 122,
+    minHeight: 107,
     areaEntry: ["nintendo"],
     attractions: {
       fixed: [
@@ -627,7 +627,7 @@ var FALLBACK_PASSES = [
     color: "#27AE60",
     colorBg: "#E8F8EF",
     borderColor: "#27AE60",
-    minHeight: 122,
+    minHeight: 107,
     areaEntry: ["nintendo"],
     attractions: {
       fixed: [
