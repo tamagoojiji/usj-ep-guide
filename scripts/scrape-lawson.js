@@ -100,7 +100,7 @@ async function main() {
       } else {
         console.log(`  ${pass.lCode}: 公演日程なし`);
       }
-      await sleep(8000);
+      await sleep(3000);
     }
 
     // Step 3: passIdマッピング + データ整形
@@ -285,7 +285,7 @@ async function scrapePerformanceDates(browser, lCode) {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
       );
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-      await sleep(5000);
+      await sleep(3000);
 
       const dates = await page.evaluate(() => {
         // ページ全体のテキストから公演日程パターンを探す
