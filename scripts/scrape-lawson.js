@@ -91,26 +91,49 @@ async function main() {
       process.exit(0);
     }
 
-    // Step 2: 一覧ページのセクションテキストをデバッグ出力
+    // Step 2: 一覧ページの構造を調査
     console.log("Step 2: 一覧ページのパスセクション構造を調査...\n");
     passList.forEach((pass) => {
       console.log(`--- ${pass.passName} (${pass.lCode}) ---`);
       console.log(`  価格: ${pass.minPrice || "なし"}`);
-      if (pass.sectionText) {
-        // 改行で分割して各行を出力（空行除去）
-        const lines = pass.sectionText.split("\n").filter((l) => l.trim()).slice(0, 15);
+      console.log(`  linkText: ${pass.linkText}`);
+      console.log(`  linkHref: ${pass.linkHref}`);
+      if (pass.nearText) {
+        const lines = pass.nearText.split("\n").filter((l) => l.trim()).slice(0, 20);
         lines.forEach((line) => console.log(`  | ${line.trim()}`));
       }
       console.log();
     });
 
-    // Step 3: 各Lコードの公演日程を取得（ブラウザ内fetch使用）
-    console.log("Step 3: 各Lコードの公演日程を取得...");
-    const dateMap = await scrapePerformanceDates(listPage, passList);
-    await listPage.close();
+    // ページ全体の日付パターンを調査
+    console.log("--- ページ全体の日付パターン調査 ---");
+    const pageDateInfo = await listPage.evaluate(() => {
+      const text = document.body ? document.body.innerText : "";
+      // 日付パターンを全て抽出
+      const dateMatches = text.match(/\d{4}[\/年]\d{1,2}[\/月]\d{1,2}[日]?/g) || [];
+      // "公演" "期間" "販売" 周辺のテキスト
+      const contextMatches = [];
+      const keywords = ["公演", "期間", "販売", "入場日", "利用日"];
+      const lines = text.split("\n");
+      for (const line of lines) {
+        for (const kw of keywords) {
+          if (line.includes(kw)) {
+            contextMatches.push(line.trim().substring(0, 200));
+            break;
+          }
+        }
+      }
+      return { dateMatches: dateMatches.slice(0, 30), contextMatches: contextMatches.slice(0, 20) };
+    });
+    console.log(`  日付パターン: ${JSON.stringify(pageDateInfo.dateMatches)}`);
+    console.log(`  キーワード含む行:`);
+    pageDateInfo.contextMatches.forEach((line) => console.log(`  | ${line}`));
+    console.log();
 
-    const datesFound = Object.keys(dateMap).length;
-    console.log(`  ${datesFound}/${passList.length}件の公演日程を取得\n`);
+    // Step 3: 公演日程取得（一覧ページ調査のみ、検索ページアクセスはスキップ）
+    await listPage.close();
+    const dateMap = {};
+    console.log("  ※検索ページアクセスはスキップ（タイムアウト回避）\n");
 
     // Step 4: passIdマッピング + データ整形
     console.log("Step 4: passIdマッピング...\n");
@@ -239,14 +262,18 @@ async function scrapeEpListPage(browser) {
         parent = parent.parentElement;
       }
 
-      // リンク周辺のHTML構造をデバッグ出力用に取得
-      let sectionHtml = "";
-      let sectionEl = link.parentElement;
-      for (let i = 0; i < 5 && sectionEl; i++) {
-        sectionEl = sectionEl.parentElement;
-      }
-      if (sectionEl) {
-        sectionHtml = sectionEl.innerText.substring(0, 500);
+      // リンク周辺テキスト（近い範囲）とHTMLタグ構造を取得
+      const linkText = link.textContent.trim().substring(0, 200);
+      const linkHref = href.substring(0, 200);
+      let nearText = "";
+      // 1-2階層上の親テキスト
+      let p1 = link.parentElement;
+      if (p1) {
+        nearText = p1.innerText.substring(0, 300);
+        let p2 = p1.parentElement;
+        if (p2) {
+          nearText = p2.innerText.substring(0, 500);
+        }
       }
 
       // 各Lコードを個別に登録
@@ -257,7 +284,9 @@ async function scrapeEpListPage(browser) {
           passName: passName || `エクスプレス・パス（Lコード:${lCode}）`,
           lCode,
           minPrice,
-          sectionText: sectionHtml,
+          linkText,
+          linkHref,
+          nearText,
         });
       });
     });
