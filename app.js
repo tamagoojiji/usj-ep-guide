@@ -689,6 +689,14 @@
       }
     }
 
+    // 人数セレクター初期化
+    updateFamilyTotal();
+    var peopleSelect = document.getElementById("people-count");
+    if (peopleSelect) {
+      peopleSelect.removeEventListener("change", updateFamilyTotal);
+      peopleSelect.addEventListener("change", updateFamilyTotal);
+    }
+
     // 診断結果をGASに保存
     saveDiagnosisResult(result);
   }
@@ -721,15 +729,19 @@
     html += '<h3 class="result-card-name">' + p.name + '</h3>';
 
     if (hasDailyPrice) {
-      html += '<p class="result-card-price" style="color:' + p.color + '">¥' + price.toLocaleString() + '</p>';
+      html += '<p class="result-card-price" data-unit-price="' + price + '" style="color:' + p.color + '">¥' + price.toLocaleString() + '<span class="price-per-person">/人</span></p>';
+      html += '<p class="family-total-price" style="color:' + p.color + '"></p>';
     } else if (p.lawson && p.lawson.minPrice) {
-      html += '<p class="result-card-price" style="color:' + p.color + '">¥' + p.lawson.minPrice.toLocaleString() + '~</p>';
+      html += '<p class="result-card-price" data-unit-price="' + p.lawson.minPrice + '" data-price-approx="true" style="color:' + p.color + '">¥' + p.lawson.minPrice.toLocaleString() + '~<span class="price-per-person">/人</span></p>';
+      html += '<p class="family-total-price" style="color:' + p.color + '"></p>';
       html += '<p class="price-annotation">※日別価格は販売開始後に確定します</p>';
     } else if (isPredicted && p.historicalMinPrice) {
-      html += '<p class="result-card-price price-predicted" style="color:' + p.color + '">¥' + p.historicalMinPrice.toLocaleString() + '~</p>';
+      html += '<p class="result-card-price price-predicted" data-unit-price="' + p.historicalMinPrice + '" data-price-approx="true" style="color:' + p.color + '">¥' + p.historicalMinPrice.toLocaleString() + '~<span class="price-per-person">/人</span></p>';
+      html += '<p class="family-total-price" style="color:' + p.color + '"></p>';
       html += '<p class="price-annotation">※過去の販売実績に基づく参考価格です</p>';
     } else if (p.historicalMinPrice) {
-      html += '<p class="result-card-price" style="color:' + p.color + '">¥' + p.historicalMinPrice.toLocaleString() + '~</p>';
+      html += '<p class="result-card-price" data-unit-price="' + p.historicalMinPrice + '" data-price-approx="true" style="color:' + p.color + '">¥' + p.historicalMinPrice.toLocaleString() + '~<span class="price-per-person">/人</span></p>';
+      html += '<p class="family-total-price" style="color:' + p.color + '"></p>';
       html += '<p class="price-annotation">※直近の最低価格です。日によって変動します</p>';
     } else {
       html += '<p class="result-card-price price-undecided">価格未定</p>';
@@ -951,6 +963,32 @@
     }
     html += '</ul>';
     return html;
+  }
+
+  // === 家族人数セレクター：合計金額更新 ===
+  function updateFamilyTotal() {
+    var count = parseInt(document.getElementById("people-count").value, 10) || 1;
+    // /人 表示切替
+    var perPersonEls = document.querySelectorAll(".price-per-person");
+    for (var i = 0; i < perPersonEls.length; i++) {
+      perPersonEls[i].style.display = count <= 1 ? "none" : "inline";
+    }
+    // 合計行更新
+    var totalEls = document.querySelectorAll(".family-total-price");
+    for (var j = 0; j < totalEls.length; j++) {
+      var el = totalEls[j];
+      var priceEl = el.previousElementSibling;
+      while (priceEl && !priceEl.getAttribute("data-unit-price")) {
+        priceEl = priceEl.previousElementSibling;
+      }
+      if (!priceEl) { el.style.display = "none"; continue; }
+      var unitPrice = parseInt(priceEl.getAttribute("data-unit-price"), 10);
+      if (!unitPrice || count <= 1) { el.style.display = "none"; continue; }
+      var total = unitPrice * count;
+      var approx = priceEl.getAttribute("data-price-approx") === "true";
+      el.textContent = count + "人分合計: ¥" + total.toLocaleString() + (approx ? "~" : "");
+      el.style.display = "block";
+    }
   }
 
   // === リセット ===

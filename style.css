@@ -1483,3 +1483,55 @@ body {
   padding: 2px 8px;
   border-radius: 10px;
 }
+
+/* === 人数セレクター === */
+.people-selector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  background: #F0F4F8;
+  border-radius: 10px;
+}
+.people-selector-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #555;
+}
+.people-selector-select {
+  padding: 8px 12px;
+  border: 2px solid #DDE3EA;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #333;
+  background: #fff;
+  min-width: 80px;
+  text-align: center;
+}
+.people-selector-select:focus {
+  outline: none;
+  border-color: #4A90D9;
+}
+
+/* === /人 + 合計 === */
+.price-per-person {
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.7;
+}
+.sub-result-card .price-per-person {
+  font-size: 12px;
+}
+.family-total-price {
+  font-size: 18px;
+  font-weight: 800;
+  margin-top: 2px;
+  margin-bottom: 4px;
+  display: none;
+}
+.sub-result-card .family-total-price {
+  font-size: 15px;
+}
