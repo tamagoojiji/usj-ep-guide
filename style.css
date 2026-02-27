@@ -136,6 +136,23 @@ body {
   padding: 16px 0;
 }
 
+/* 戻るボタン */
+.quiz-back-btn {
+  display: inline-block;
+  background: none;
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  color: #888;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-bottom: 4px;
+  transition: color 0.2s;
+}
+.quiz-back-btn:hover {
+  color: #4A90D9;
+}
+
 .progress-info {
   text-align: center;
   font-size: 14px;

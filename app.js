@@ -1155,6 +1155,20 @@
       });
     });
 
+    // 戻るボタン
+    document.getElementById("back-to-top").addEventListener("click", function () {
+      showTopScreen();
+    });
+    document.getElementById("back-to-date").addEventListener("click", function () {
+      showScreen("screen-date");
+    });
+    document.getElementById("back-to-height").addEventListener("click", function () {
+      showScreen("screen-height");
+    });
+    document.getElementById("back-to-attractions").addEventListener("click", function () {
+      showScreen("screen-attractions");
+    });
+
     // アトラクション「次へ」ボタン
     document.getElementById("attraction-next-btn").addEventListener("click", function () {
       if (selectedTags.length === 0) {
