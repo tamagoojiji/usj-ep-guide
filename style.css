@@ -1553,3 +1553,20 @@ body {
 .sub-result-card .family-total-price {
   font-size: 15px;
 }
+
+/* === 付き添い注記 === */
+.companion-note {
+  font-size: 13px;
+  color: #D35400;
+  background: #FEF5E7;
+  border-left: 3px solid #E67E22;
+  padding: 6px 10px;
+  margin: 8px 0;
+  border-radius: 4px;
+  line-height: 1.5;
+}
+.sub-result-card .companion-note {
+  font-size: 12px;
+  padding: 4px 8px;
+  margin: 6px 0;
+}

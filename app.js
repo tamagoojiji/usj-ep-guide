@@ -757,6 +757,11 @@
     html += buildSalesBadge(p, hasDailyPrice, isPredicted);
     html += '<p class="result-card-desc">' + p.description + '</p>';
 
+    // マリオカート付き添い注記（107-121cmの場合）
+    if (p.tags.indexOf("mario") !== -1 && selectedHeight >= 107 && selectedHeight < 122) {
+      html += '<p class="companion-note">※マリオカートは付き添い者が必要です</p>';
+    }
+
     if (isMain) {
       html += buildAttractionsSection(p);
       html += buildAreaSection(p);
