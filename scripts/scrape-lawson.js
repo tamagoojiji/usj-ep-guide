@@ -89,11 +89,18 @@ async function main() {
       process.exit(0);
     }
 
-    // Step 2: 各Lコードの検索ページから公演日程を取得
+    // Step 2: 各Lコードの詳細ページから公演日程を取得
     console.log("Step 2: 各Lコードの公演日程を取得...\n");
     const performanceDates = {};
     for (const pass of passList) {
-      const dates = await scrapePerformanceDates(pass.lCode);
+      // EP一覧ページで既に日付取得済みならスキップ
+      if (pass.performanceFrom && pass.performanceTo) {
+        performanceDates[pass.lCode] = { from: pass.performanceFrom, to: pass.performanceTo };
+        console.log(`  ${pass.lCode}: ${pass.performanceFrom} 〜 ${pass.performanceTo} (一覧ページから取得)`);
+        continue;
+      }
+      // 実際のリンクURLにPuppeteerでアクセス
+      const dates = await scrapePerformanceDates(browser, pass.lCode, pass.href);
       if (dates) {
         performanceDates[pass.lCode] = dates;
         console.log(`  ${pass.lCode}: ${dates.from || "?"} 〜 ${dates.to || "?"}`);
@@ -227,6 +234,36 @@ async function scrapeEpListPage(browser) {
           parent = parent.parentElement;
         }
 
+        // 公演日程を探す（リンク周辺のテキストから）
+        let performanceFrom = "";
+        let performanceTo = "";
+        let searchParent = link.parentElement;
+        for (let i = 0; i < 5 && searchParent; i++) {
+          const parentText = searchParent.textContent || "";
+          // "YYYY/MM/DD(曜) ～ YYYY/MM/DD(曜)" パターン
+          const dateRange = parentText.match(
+            /(\d{4})\/(\d{1,2})\/(\d{1,2})\s*\([^)]*\)\s*[～〜~ー-]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/
+          );
+          if (dateRange) {
+            performanceFrom = dateRange[1] + "-" + dateRange[2].padStart(2, "0") + "-" + dateRange[3].padStart(2, "0");
+            performanceTo = dateRange[4] + "-" + dateRange[5].padStart(2, "0") + "-" + dateRange[6].padStart(2, "0");
+            break;
+          }
+          // "YYYY年MM月DD日～YYYY年MM月DD日" パターン
+          const jpRange = parentText.match(
+            /(\d{4})年(\d{1,2})月(\d{1,2})日\s*[～〜~ー-]\s*(\d{4})年(\d{1,2})月(\d{1,2})日/
+          );
+          if (jpRange) {
+            performanceFrom = jpRange[1] + "-" + jpRange[2].padStart(2, "0") + "-" + jpRange[3].padStart(2, "0");
+            performanceTo = jpRange[4] + "-" + jpRange[5].padStart(2, "0") + "-" + jpRange[6].padStart(2, "0");
+            break;
+          }
+          searchParent = searchParent.parentElement;
+        }
+
+        // 実際のリンクURLを保存
+        const fullHref = href.startsWith("http") ? href : (href.startsWith("/") ? "https://l-tike.com" + href : "");
+
         // 各Lコードを個別に登録
         lCodes.forEach((lCode) => {
           if (seen.has(lCode)) return;
@@ -235,12 +272,42 @@ async function scrapeEpListPage(browser) {
             passName: passName || `エクスプレス・パス（Lコード:${lCode}）`,
             lCode,
             minPrice,
+            performanceFrom,
+            performanceTo,
+            href: fullHref,
           });
         });
       });
 
       return results;
     });
+
+    // デバッグ: ページテキストのサンプルを出力（日付パターン調査用）
+    const pageDebug = await page.evaluate(() => {
+      const text = document.body.innerText || "";
+      // 日付を含む行を抽出
+      const lines = text.split("\n").filter(l => l.trim());
+      const dateLines = lines.filter(l => /\d{4}[\/年]/.test(l)).slice(0, 10);
+      // 各パスセクションの周辺テキスト（200文字サンプル）
+      const passTexts = [];
+      const sections = document.querySelectorAll('a[href*="lcd="]');
+      sections.forEach((a, i) => {
+        if (i >= 3) return;
+        let parent = a.parentElement;
+        for (let j = 0; j < 3 && parent; j++) parent = parent.parentElement;
+        if (parent) passTexts.push(parent.textContent.trim().substring(0, 300));
+      });
+      return { dateLines, passTexts, totalLength: text.length };
+    });
+    console.log("\n  [デバッグ] ページテキスト長:", pageDebug.totalLength);
+    if (pageDebug.dateLines.length > 0) {
+      console.log("  [デバッグ] 日付を含む行:");
+      pageDebug.dateLines.forEach(l => console.log("    " + l.substring(0, 150)));
+    }
+    if (pageDebug.passTexts.length > 0) {
+      console.log("  [デバッグ] パスセクション周辺テキスト:");
+      pageDebug.passTexts.forEach((t, i) => console.log(`    [${i}] ${t.substring(0, 200)}`));
+    }
 
     // デバッグ: 検出内容を出力
     if (passes.length === 0) {
@@ -270,101 +337,104 @@ async function scrapeEpListPage(browser) {
 }
 
 /**
- * Lコードの検索ページから公演日程を取得（fetch版）
- * Puppeteerではなく直接HTTPリクエストでHTML取得 → Regexパース
+ * Lコードの詳細ページから公演日程を取得（Puppeteer版）
+ * 各アクセスで新しいページを作成（stale page回避）
+ * @param {Browser} browser
  * @param {string} lCode
+ * @param {string} href - EP一覧ページから取得した実際のリンクURL
  * @return {Object|null} { from: "YYYY-MM-DD", to: "YYYY-MM-DD" }
  */
-async function scrapePerformanceDates(lCode) {
-  const url = `https://l-tike.com/search/?lcd=${lCode}`;
+async function scrapePerformanceDates(browser, lCode, href) {
+  // 実際のリンクURLがあればそれを使う、なければ注文ページURLを試す
+  const urls = [];
+  if (href) urls.push(href);
+  urls.push(`https://l-tike.com/order/?lcd=${lCode}`);
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000);
-
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
-        },
-        redirect: "follow",
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const html = await response.text();
-      return parseDatesFromHtml(html);
-    } catch (err) {
-      if (attempt === 0) {
-        console.log(`  [リトライ] ${lCode}: ${err.message}`);
+  for (const url of urls) {
+    console.log(`  [試行] ${lCode}: ${url}`);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let page = null;
+      try {
+        // 毎回新しいページを作成（stale page回避）
+        page = await browser.newPage();
+        await page.setUserAgent(
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        );
+        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
         await sleep(3000);
-      } else {
-        console.log(`  [エラー] ${lCode}: ${err.message}`);
-        return null;
+
+        const result = await page.evaluate(() => {
+          const text = document.body.innerText || "";
+
+          // パターン1: "YYYY/MM/DD(曜) ～ YYYY/MM/DD(曜)"
+          const rangeMatch = text.match(
+            /(\d{4})\/(\d{1,2})\/(\d{1,2})\s*\([^)]*\)\s*[～〜~ー-]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/
+          );
+          if (rangeMatch) {
+            return {
+              from: rangeMatch[1] + "-" + rangeMatch[2].padStart(2, "0") + "-" + rangeMatch[3].padStart(2, "0"),
+              to: rangeMatch[4] + "-" + rangeMatch[5].padStart(2, "0") + "-" + rangeMatch[6].padStart(2, "0"),
+            };
+          }
+
+          // パターン2: "公演期間" 近くの日付
+          const perfMatch = text.match(
+            /公演[期間日]*[：:\s]*(\d{4})\/(\d{1,2})\/(\d{1,2})[^]*?[～〜~ー-]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/
+          );
+          if (perfMatch) {
+            return {
+              from: perfMatch[1] + "-" + perfMatch[2].padStart(2, "0") + "-" + perfMatch[3].padStart(2, "0"),
+              to: perfMatch[4] + "-" + perfMatch[5].padStart(2, "0") + "-" + perfMatch[6].padStart(2, "0"),
+            };
+          }
+
+          // パターン3: "YYYY年MM月DD日" 形式
+          const jpMatch = text.match(
+            /(\d{4})年(\d{1,2})月(\d{1,2})日\s*[～〜~ー-]\s*(\d{4})年(\d{1,2})月(\d{1,2})日/
+          );
+          if (jpMatch) {
+            return {
+              from: jpMatch[1] + "-" + jpMatch[2].padStart(2, "0") + "-" + jpMatch[3].padStart(2, "0"),
+              to: jpMatch[4] + "-" + jpMatch[5].padStart(2, "0") + "-" + jpMatch[6].padStart(2, "0"),
+            };
+          }
+
+          // パターン4: JSON-LD
+          const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+          for (const script of scripts) {
+            try {
+              const json = JSON.parse(script.textContent);
+              if (json.startDate && json.endDate) {
+                return { from: json.startDate.substring(0, 10), to: json.endDate.substring(0, 10) };
+              }
+            } catch (e) { /* ignore */ }
+          }
+
+          // デバッグ: 日付を含むテキストを返す
+          const dateLines = text.split("\n").filter(l => /\d{4}[\/年]/.test(l)).slice(0, 5);
+          return { debug: dateLines.join(" | ").substring(0, 300) };
+        });
+
+        await page.close();
+
+        if (result && result.from && result.to) {
+          return result;
+        }
+        if (result && result.debug) {
+          console.log(`  [デバッグ] ${lCode} 日付テキスト: ${result.debug || "(なし)"}`);
+        }
+        // 日付が見つからなかったら次のURLを試す
+        break;
+      } catch (err) {
+        if (page) await page.close().catch(() => {});
+        if (attempt === 0) {
+          console.log(`  [リトライ] ${lCode}: ${err.message}`);
+          await sleep(5000);
+        } else {
+          console.log(`  [エラー] ${lCode}: ${err.message}`);
+        }
       }
     }
-  }
-
-  return null;
-}
-
-/**
- * HTMLテキストから公演日程を抽出
- * @param {string} html
- * @return {Object|null} { from: "YYYY-MM-DD", to: "YYYY-MM-DD" }
- */
-function parseDatesFromHtml(html) {
-  // パターン1: "YYYY/MM/DD(曜) ～ YYYY/MM/DD(曜)"
-  const rangeMatch = html.match(
-    /(\d{4})\/(\d{1,2})\/(\d{1,2})\s*\([^)]*\)\s*[～〜~ー\-]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/
-  );
-  if (rangeMatch) {
-    return {
-      from: `${rangeMatch[1]}-${rangeMatch[2].padStart(2, "0")}-${rangeMatch[3].padStart(2, "0")}`,
-      to: `${rangeMatch[4]}-${rangeMatch[5].padStart(2, "0")}-${rangeMatch[6].padStart(2, "0")}`,
-    };
-  }
-
-  // パターン2: "公演期間" 近くの日付
-  const perfMatch = html.match(
-    /公演[期間日]*[：:\s]*(\d{4})\/(\d{1,2})\/(\d{1,2})[\s\S]*?[～〜~ー\-]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/
-  );
-  if (perfMatch) {
-    return {
-      from: `${perfMatch[1]}-${perfMatch[2].padStart(2, "0")}-${perfMatch[3].padStart(2, "0")}`,
-      to: `${perfMatch[4]}-${perfMatch[5].padStart(2, "0")}-${perfMatch[6].padStart(2, "0")}`,
-    };
-  }
-
-  // パターン3: JSON-LD
-  const ldMatches = html.matchAll(/<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
-  for (const m of ldMatches) {
-    try {
-      const json = JSON.parse(m[1]);
-      if (json.startDate && json.endDate) {
-        return {
-          from: json.startDate.substring(0, 10),
-          to: json.endDate.substring(0, 10),
-        };
-      }
-    } catch (e) { /* ignore */ }
-  }
-
-  // パターン4: "YYYY年MM月DD日" 形式の範囲
-  const jpMatch = html.match(
-    /(\d{4})年(\d{1,2})月(\d{1,2})日\s*[～〜~ー\-]\s*(\d{4})年(\d{1,2})月(\d{1,2})日/
-  );
-  if (jpMatch) {
-    return {
-      from: `${jpMatch[1]}-${jpMatch[2].padStart(2, "0")}-${jpMatch[3].padStart(2, "0")}`,
-      to: `${jpMatch[4]}-${jpMatch[5].padStart(2, "0")}-${jpMatch[6].padStart(2, "0")}`,
-    };
   }
 
   return null;
