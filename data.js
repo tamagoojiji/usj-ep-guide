@@ -664,9 +664,11 @@ var FALLBACK_PASSES = [
 
 // === レコメンドアルゴリズム ===
 function calculateResult(date, height, attractionTags, budget) {
-  // Step 1: 日付フィルタ
+  // Step 1: 日付フィルタ（価格データ or ローチケ公演日程内）
   var available = PASSES.filter(function (p) {
-    return p.pricing[date] !== undefined;
+    if (p.pricing[date] !== undefined) return true;
+    return p.lawson && p.lawson.performanceFrom && p.lawson.performanceTo
+      && date >= p.lawson.performanceFrom && date <= p.lawson.performanceTo;
   });
 
   if (available.length === 0) {
@@ -702,7 +704,7 @@ function calculateResult(date, height, attractionTags, budget) {
     }
 
     // Step 4: 予算スコア
-    var price = p.pricing[date];
+    var price = p.pricing[date] || 0;
     var budgetScore = 0;
 
     if (budget === "time") {
@@ -746,7 +748,7 @@ function calculateResult(date, height, attractionTags, budget) {
   if (scored.length === 0) {
     // フィルタで全滅した場合、元のリストから予算だけでスコアリング
     scored = available.map(function (p) {
-      var price = p.pricing[date];
+      var price = p.pricing[date] || 0;
       var budgetScore = 0;
       if (budget === "save") {
         budgetScore = price <= 15000 ? 5 : price <= 20000 ? 3 : 1;

@@ -1404,6 +1404,12 @@ body {
   color: #999;
 }
 
+/* === 価格未定 === */
+.price-undecided {
+  color: #999 !important;
+  font-size: 20px;
+}
+
 /* === 価格注釈 === */
 .price-annotation {
   font-size: 11px;

@@ -365,7 +365,9 @@
 
   function hasAnyPassOnDate(dateStr) {
     return PASSES.some(function (p) {
-      return p.pricing[dateStr] !== undefined;
+      if (p.pricing[dateStr] !== undefined) return true;
+      return p.lawson && p.lawson.performanceFrom && p.lawson.performanceTo
+        && dateStr >= p.lawson.performanceFrom && dateStr <= p.lawson.performanceTo;
     });
   }
 
@@ -695,13 +697,16 @@
     html += '<div class="result-card-badge" style="background:' + p.color + '">' + p.shortName + '</div>';
     html += '<h3 class="result-card-name">' + p.name + '</h3>';
 
-    // 日別価格がある場合は通常表示、ない場合はローチケ最低価格+注釈
+    // 日別価格がある場合は通常表示、ない場合はローチケ最低価格+注釈、それもなければ価格未定
     var hasDailyPrice = price && price > 0;
     if (hasDailyPrice) {
       html += '<p class="result-card-price" style="color:' + p.color + '">¥' + price.toLocaleString() + '</p>';
     } else if (p.lawson && p.lawson.minPrice) {
       html += '<p class="result-card-price" style="color:' + p.color + '">¥' + p.lawson.minPrice.toLocaleString() + '~</p>';
       html += '<p class="price-annotation">※日別価格は販売開始後に確定します</p>';
+    } else {
+      html += '<p class="result-card-price price-undecided">価格未定</p>';
+      html += '<p class="price-annotation">※価格は販売開始後に確定します</p>';
     }
 
     html += buildSalesBadge(p);
@@ -915,7 +920,7 @@
   // === 期限切れチェック ===
   function isExpired() {
     var now = new Date();
-    var expiry = new Date(2026, 3, 16);
+    var expiry = new Date(2026, 5, 1);
     return now >= expiry;
   }
 

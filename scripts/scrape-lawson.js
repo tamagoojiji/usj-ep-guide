@@ -89,10 +89,25 @@ async function main() {
       process.exit(0);
     }
 
-    // Step 2: passIdマッピング + データ整形
-    console.log("Step 2: passIdマッピング...\n");
+    // Step 2: 各Lコードの検索ページから公演日程を取得
+    console.log("Step 2: 各Lコードの公演日程を取得...\n");
+    const performanceDates = {};
+    for (const pass of passList) {
+      const dates = await scrapePerformanceDates(browser, pass.lCode);
+      if (dates) {
+        performanceDates[pass.lCode] = dates;
+        console.log(`  ${pass.lCode}: ${dates.from || "?"} 〜 ${dates.to || "?"}`);
+      } else {
+        console.log(`  ${pass.lCode}: 公演日程なし`);
+      }
+      await sleep(8000);
+    }
+
+    // Step 3: passIdマッピング + データ整形
+    console.log("\nStep 3: passIdマッピング...\n");
     const dataList = passList.map((pass) => {
       const passId = matchPassId(pass.passName);
+      const dates = performanceDates[pass.lCode] || {};
       console.log(`  ${pass.passName} (${pass.lCode}) → ${passId || "(新規)"}`);
       return {
         passId: passId || "",
@@ -101,14 +116,14 @@ async function main() {
         salesStatus: "販売中", // EP一覧ページに掲載 = 販売中
         salesFrom: "",
         salesTo: "",
-        performanceFrom: "",
-        performanceTo: "",
+        performanceFrom: dates.from || "",
+        performanceTo: dates.to || "",
         minPrice: pass.minPrice || null,
       };
     });
 
-    // Step 3: GASへPOST送信
-    console.log(`\nStep 3: GASへデータ送信 (${dataList.length}件)...`);
+    // Step 4: GASへPOST送信
+    console.log(`\nStep 4: GASへデータ送信 (${dataList.length}件)...`);
     const gasResult = await postToGas(GAS_URL, API_KEY, dataList);
     console.log(`  GAS応答: ${JSON.stringify(gasResult)}`);
 
@@ -252,6 +267,83 @@ async function scrapeEpListPage(browser) {
   } finally {
     await page.close();
   }
+}
+
+/**
+ * Lコードの検索ページから公演日程を取得
+ * @param {Browser} browser
+ * @param {string} lCode
+ * @return {Object|null} { from: "YYYY-MM-DD", to: "YYYY-MM-DD" }
+ */
+async function scrapePerformanceDates(browser, lCode) {
+  const url = `https://l-tike.com/search/?lcd=${lCode}`;
+  const page = await browser.newPage();
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await page.setUserAgent(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+      );
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await sleep(5000);
+
+      const dates = await page.evaluate(() => {
+        // ページ全体のテキストから公演日程パターンを探す
+        const text = document.body.innerText || "";
+
+        // パターン1: "YYYY/MM/DD(曜) ～ YYYY/MM/DD(曜)" or "YYYY/M/D(曜)〜YYYY/M/D(曜)"
+        const rangeMatch = text.match(
+          /(\d{4})\/(\d{1,2})\/(\d{1,2})\s*\([^)]*\)\s*[～〜~ー-]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/
+        );
+        if (rangeMatch) {
+          const from = `${rangeMatch[1]}-${rangeMatch[2].padStart(2, "0")}-${rangeMatch[3].padStart(2, "0")}`;
+          const to = `${rangeMatch[4]}-${rangeMatch[5].padStart(2, "0")}-${rangeMatch[6].padStart(2, "0")}`;
+          return { from, to };
+        }
+
+        // パターン2: "公演期間" の近くの日付
+        const perfMatch = text.match(
+          /公演[期間日]*[：:\s]*(\d{4})\/(\d{1,2})\/(\d{1,2})[^]*?[～〜~ー-]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/
+        );
+        if (perfMatch) {
+          const from = `${perfMatch[1]}-${perfMatch[2].padStart(2, "0")}-${perfMatch[3].padStart(2, "0")}`;
+          const to = `${perfMatch[4]}-${perfMatch[5].padStart(2, "0")}-${perfMatch[6].padStart(2, "0")}`;
+          return { from, to };
+        }
+
+        // パターン3: meta tagやJSON-LDから探す
+        const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+        for (const script of scripts) {
+          try {
+            const json = JSON.parse(script.textContent);
+            if (json.startDate && json.endDate) {
+              return {
+                from: json.startDate.substring(0, 10),
+                to: json.endDate.substring(0, 10),
+              };
+            }
+          } catch (e) { /* ignore */ }
+        }
+
+        return null;
+      });
+
+      await page.close();
+      return dates;
+    } catch (err) {
+      if (attempt === 0) {
+        console.log(`  [リトライ] ${lCode}: ${err.message}`);
+        await sleep(5000);
+      } else {
+        console.log(`  [エラー] ${lCode}: ${err.message}`);
+        await page.close();
+        return null;
+      }
+    }
+  }
+
+  await page.close();
+  return null;
 }
 
 /**
