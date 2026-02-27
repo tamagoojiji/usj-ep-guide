@@ -363,15 +363,20 @@
   //  カレンダー・選択肢（既存ロジック）
   // ============================================================
 
+  // priceRangeData: APIから取得した販売期間情報（通年パス予測判定に使用）
+  var priceRangeData = null;
+
   function hasAnyPassOnDate(dateStr) {
     return PASSES.some(function (p) {
       if (p.pricing[dateStr] !== undefined) return true;
       // ローチケの販売期間内であれば有効（salesToがあればそれを上限、なければperformanceTo）
       if (p.lawson && p.lawson.performanceFrom) {
         var upperDate = p.lawson.salesTo || p.lawson.performanceTo;
-        if (upperDate) {
-          return dateStr >= p.lawson.performanceFrom && dateStr <= upperDate;
-        }
+        if (upperDate && dateStr >= p.lawson.performanceFrom && dateStr <= upperDate) return true;
+      }
+      // 通年型パス → priceRange内で販売見込み
+      if (isRegularPass(p) && priceRangeData && priceRangeData.to && dateStr <= priceRangeData.to) {
+        return true;
       }
       return false;
     });
@@ -694,6 +699,18 @@
     var price = item.price;
     var cardClass = isMain ? "result-card" : "sub-result-card";
 
+    // 予測パス判定（カードクラスに反映するため先に判定）
+    var hasDailyPrice = price && price > 0;
+    var hasLawsonCoverage = p.lawson && p.lawson.performanceFrom && (function () {
+      var upper = p.lawson.salesTo || p.lawson.performanceTo;
+      return upper && selectedDate >= p.lawson.performanceFrom && selectedDate <= upper;
+    })();
+    var isPredicted = !hasDailyPrice && !hasLawsonCoverage && isRegularPass(p);
+
+    if (isPredicted) {
+      cardClass += " result-card--predicted";
+    }
+
     var html = '<div class="' + cardClass + '"';
     if (isMain) {
       html += ' style="border-color:' + p.borderColor + '; background:' + p.colorBg + '"';
@@ -703,13 +720,14 @@
     html += '<div class="result-card-badge" style="background:' + p.color + '">' + p.shortName + '</div>';
     html += '<h3 class="result-card-name">' + p.name + '</h3>';
 
-    // 日別価格がある場合は通常表示、ない場合はローチケ最低価格+注釈、それもなければ価格未定
-    var hasDailyPrice = price && price > 0;
     if (hasDailyPrice) {
       html += '<p class="result-card-price" style="color:' + p.color + '">¥' + price.toLocaleString() + '</p>';
     } else if (p.lawson && p.lawson.minPrice) {
       html += '<p class="result-card-price" style="color:' + p.color + '">¥' + p.lawson.minPrice.toLocaleString() + '~</p>';
       html += '<p class="price-annotation">※日別価格は販売開始後に確定します</p>';
+    } else if (isPredicted && p.historicalMinPrice) {
+      html += '<p class="result-card-price price-predicted" style="color:' + p.color + '">¥' + p.historicalMinPrice.toLocaleString() + '~</p>';
+      html += '<p class="price-annotation">※過去の販売実績に基づく参考価格です</p>';
     } else if (p.historicalMinPrice) {
       html += '<p class="result-card-price" style="color:' + p.color + '">¥' + p.historicalMinPrice.toLocaleString() + '~</p>';
       html += '<p class="price-annotation">※直近の最低価格です。日によって変動します</p>';
@@ -718,7 +736,7 @@
       html += '<p class="price-annotation">※価格は販売開始後に確定します</p>';
     }
 
-    html += buildSalesBadge(p, hasDailyPrice);
+    html += buildSalesBadge(p, hasDailyPrice, isPredicted);
     html += '<p class="result-card-desc">' + p.description + '</p>';
 
     if (isMain) {
@@ -734,7 +752,7 @@
   }
 
   // === 販売状況バッジ ===
-  function buildSalesBadge(pass, hasDailyPrice) {
+  function buildSalesBadge(pass, hasDailyPrice, isPredicted) {
     var html = '';
 
     // ローチケデータがある場合はそちらを優先
@@ -768,13 +786,29 @@
     }
 
     // ローチケデータなし → 既存ロジック（価格データの最終日を表示）
-    if (!pass.pricing) return '';
+    if (!pass.pricing) {
+      if (isPredicted) {
+        return '<span class="sales-badge sales-badge--predicted">販売見込み</span>';
+      }
+      return '';
+    }
     var dates = Object.keys(pass.pricing).sort();
-    if (dates.length === 0) return '';
+    if (dates.length === 0) {
+      if (isPredicted) {
+        return '<span class="sales-badge sales-badge--predicted">販売見込み</span>';
+      }
+      return '';
+    }
     var lastDate = dates[dates.length - 1];
     var parts = lastDate.split('-');
     var month = parseInt(parts[1], 10);
     var day = parseInt(parts[2], 10);
+
+    // 選択日が価格データ範囲外 → 予測パスなら「販売見込み」
+    if (isPredicted && selectedDate > lastDate) {
+      return '<span class="sales-badge sales-badge--predicted">販売見込み</span>';
+    }
+
     return '<span class="sales-badge sales-badge--active">' + month + '月' + day + '日まで販売</span>';
   }
 
@@ -939,7 +973,7 @@
   // ============================================================
   //  パスデータをAPI取得（キャッシュ優先 + フォールバック付き）
   // ============================================================
-  var PASS_CACHE_KEY = "ep_pass_cache_v5";
+  var PASS_CACHE_KEY = "ep_pass_cache_v6";
   var PASS_CACHE_MAX_AGE = 6 * 60 * 60 * 1000; // 6時間
 
   function loadPassData(callback) {
@@ -966,6 +1000,7 @@
           ATTRACTION_TAGS = cacheData.attractionTags;
           UPCOMING_PASSES = cacheData.upcoming || [];
           PASS_DATA_LOADED = true;
+          priceRangeData = cacheData.priceRange;
           updateLastUpdatedLabels(cacheData.lastUpdated, cacheData.priceRange);
           console.log("パスデータ: キャッシュ使用 (" + PASSES.length + "件)");
           cacheUsed = true;
@@ -987,6 +1022,7 @@
         ATTRACTION_TAGS = data.attractionTags;
         UPCOMING_PASSES = data.upcoming || [];
         PASS_DATA_LOADED = true;
+        priceRangeData = data.priceRange;
         console.log("パスデータ: API取得成功 (" + PASSES.length + "件, 予告" + UPCOMING_PASSES.length + "件)");
         updateLastUpdatedLabels(data.lastUpdated, data.priceRange);
 

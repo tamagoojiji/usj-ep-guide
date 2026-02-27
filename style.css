@@ -1404,6 +1404,21 @@ body {
   color: #999;
 }
 
+.sales-badge--predicted {
+  background: #F5F5F5;
+  color: #888;
+  border: 1px dashed #CCC;
+}
+
+.result-card--predicted {
+  border-style: dashed !important;
+  opacity: 0.85;
+}
+
+.price-predicted {
+  opacity: 0.7;
+}
+
 /* === 価格未定 === */
 .price-undecided {
   color: #999 !important;

@@ -10,6 +10,13 @@ var PASS_DATA_LOADED = false;
 // === 予告パスデータ（API取得後に上書きされる） ===
 var UPCOMING_PASSES = [];
 
+// === 季節限定パスID（通年型でないもの → 予測表示しない） ===
+var SEASONAL_PASS_IDS = ["ep4_dino_4d", "ep4_space_minion_mission", "ep4_space_minion", "ep4_backdrop_race"];
+
+function isRegularPass(p) {
+  return SEASONAL_PASS_IDS.indexOf(p.id) === -1;
+}
+
 // === フォールバック用アトラクションタグ定義 ===
 var FALLBACK_ATTRACTION_TAGS = {
   donkey: "ドンキーコング・トロッコ",
@@ -664,15 +671,15 @@ var FALLBACK_PASSES = [
 
 // === レコメンドアルゴリズム ===
 function calculateResult(date, height, attractionTags, budget) {
-  // Step 1: 日付フィルタ（価格データあり、またはローチケ販売期間内）
+  // Step 1: 日付フィルタ（価格データあり、ローチケ販売期間内、または通年型パスの予測）
   var available = PASSES.filter(function (p) {
     if (p.pricing[date] !== undefined) return true;
     if (p.lawson && p.lawson.performanceFrom) {
       var upperDate = p.lawson.salesTo || p.lawson.performanceTo;
-      if (upperDate) {
-        return date >= p.lawson.performanceFrom && date <= upperDate;
-      }
+      if (upperDate && date >= p.lawson.performanceFrom && date <= upperDate) return true;
     }
+    // 通年型パスの予測（ローチケ未掲載でも販売見込み）
+    if (isRegularPass(p)) return true;
     return false;
   });
 
