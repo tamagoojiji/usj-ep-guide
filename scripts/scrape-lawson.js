@@ -10,8 +10,9 @@
  *
  * 処理フロー:
  * 1. ローチケ EP一覧ページをスクレイプ（パス名、Lコード、最低価格）
- * 2. passIdマッピング（キーワードマッチ）
- * 3. GASへPOST送信
+ * 2. 各Lコードの検索ページから公演日程を取得（ブラウザ内fetch）
+ * 3. passIdマッピング（キーワードマッチ）
+ * 4. GASへPOST送信
  */
 
 const puppeteer = require("puppeteer");
@@ -81,34 +82,47 @@ async function main() {
   try {
     // Step 1: EP一覧ページからパス情報を取得
     console.log("Step 1: EP一覧ページをスクレイプ...");
-    const passList = await scrapeEpListPage(browser);
+    const { passes: passList, page: listPage } = await scrapeEpListPage(browser);
     console.log(`  ${passList.length}件のパスを検出\n`);
 
     if (passList.length === 0) {
       console.log("パスが見つかりませんでした。");
+      await listPage.close();
       process.exit(0);
     }
 
-    // Step 2: passIdマッピング + データ整形
-    console.log("Step 2: passIdマッピング...\n");
+    // Step 2: 各Lコードの公演日程を取得（ブラウザ内fetch使用）
+    console.log("Step 2: 各Lコードの公演日程を取得...");
+    const dateMap = await scrapePerformanceDates(listPage, passList);
+    await listPage.close();
+
+    const datesFound = Object.keys(dateMap).length;
+    console.log(`  ${datesFound}/${passList.length}件の公演日程を取得\n`);
+
+    // Step 3: passIdマッピング + データ整形
+    console.log("Step 3: passIdマッピング...\n");
     const dataList = passList.map((pass) => {
       const passId = matchPassId(pass.passName);
-      console.log(`  ${pass.passName} (${pass.lCode}) → ${passId || "(新規)"}`);
+      const dates = dateMap[pass.lCode] || {};
+      console.log(
+        `  ${pass.passName} (${pass.lCode}) → ${passId || "(新規)"}` +
+        (dates.performanceFrom ? ` [${dates.performanceFrom}～${dates.performanceTo}]` : " [日程未取得]")
+      );
       return {
         passId: passId || "",
         lCode: pass.lCode,
         passName: pass.passName,
-        salesStatus: "販売中", // EP一覧ページに掲載 = 販売中
+        salesStatus: "販売中",
         salesFrom: "",
         salesTo: "",
-        performanceFrom: "",
-        performanceTo: "",
+        performanceFrom: dates.performanceFrom || "",
+        performanceTo: dates.performanceTo || "",
         minPrice: pass.minPrice || null,
       };
     });
 
-    // Step 3: GASへPOST送信
-    console.log(`\nStep 3: GASへデータ送信 (${dataList.length}件)...`);
+    // Step 4: GASへPOST送信
+    console.log(`\nStep 4: GASへデータ送信 (${dataList.length}件)...`);
     const gasResult = await postToGas(GAS_URL, API_KEY, dataList);
     console.log(`  GAS応答: ${JSON.stringify(gasResult)}`);
 
@@ -116,11 +130,13 @@ async function main() {
     console.log("\n=== 結果サマリー ===");
     const mapped = dataList.filter((d) => d.passId).length;
     const unmapped = dataList.filter((d) => !d.passId).length;
-    console.log(`合計: ${dataList.length}件 (既存パス: ${mapped}, 予告パス: ${unmapped})`);
+    const withDates = dataList.filter((d) => d.performanceFrom).length;
+    console.log(`合計: ${dataList.length}件 (既存パス: ${mapped}, 予告パス: ${unmapped}, 日程取得: ${withDates})`);
     dataList.forEach((d) => {
       const price = d.minPrice ? `¥${d.minPrice.toLocaleString()}~` : "価格未定";
       const id = d.passId || "(新規)";
-      console.log(`  ${d.passName} [${d.salesStatus}] ${price} → ${id}`);
+      const period = d.performanceFrom ? `${d.performanceFrom}～${d.performanceTo}` : "日程不明";
+      console.log(`  ${d.passName} [${d.salesStatus}] ${price} ${period} → ${id}`);
     });
 
   } finally {
@@ -129,105 +145,254 @@ async function main() {
 }
 
 /**
- * EP一覧ページをスクレイプ
- * @return {Array<{passName, lCode, minPrice}>}
+ * EP一覧ページをスクレイプ（ページは閉じずに返す — 後続のfetchで使用）
+ * @return {{ passes: Array<{passName, lCode, minPrice}>, page: Page }}
  */
 async function scrapeEpListPage(browser) {
   const page = await browser.newPage();
-  try {
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-    );
-    await page.goto(EP_LIST_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await sleep(8000);
+  await page.setUserAgent(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+  );
+  await page.goto(EP_LIST_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await sleep(8000);
 
-    const passes = await page.evaluate(() => {
-      const results = [];
-      const seen = new Set();
+  const passes = await page.evaluate(() => {
+    const results = [];
+    const seen = new Set();
 
-      // lcd= を含むリンクを全て取得
-      const links = document.querySelectorAll('a[href*="lcd="]');
+    // lcd= を含むリンクを全て取得
+    const links = document.querySelectorAll('a[href*="lcd="]');
 
-      links.forEach((link) => {
-        const href = link.getAttribute("href") || "";
-        const lcdParam = href.match(/lcd=([^&]+)/i);
-        if (!lcdParam) return;
+    links.forEach((link) => {
+      const href = link.getAttribute("href") || "";
+      const lcdParam = href.match(/lcd=([^&]+)/i);
+      if (!lcdParam) return;
 
-        // カンマ区切りのLコードを分割
-        const lCodes = decodeURIComponent(lcdParam[1]).split(",").map((s) => s.trim()).filter((s) => /^\d+$/.test(s));
-        if (lCodes.length === 0) return;
+      // カンマ区切りのLコードを分割
+      const lCodes = decodeURIComponent(lcdParam[1]).split(",").map((s) => s.trim()).filter((s) => /^\d+$/.test(s));
+      if (lCodes.length === 0) return;
 
-        // パス名: リンクの前にあるテキストから「パス X ～XXX～」パターンを取得
-        let passName = "";
+      // パス名: リンクの前にあるテキストから「パス X ～XXX～」パターンを取得
+      let passName = "";
 
-        // 方法1: リンクの直前の兄弟要素からパス名を探す
-        let prevEl = link.previousElementSibling;
-        for (let i = 0; i < 10 && prevEl; i++) {
-          const text = prevEl.textContent || "";
-          // 「パス 4 ～XXX～」または「パス 7 ～XXX～」パターン
+      // 方法1: リンクの直前の兄弟要素からパス名を探す
+      let prevEl = link.previousElementSibling;
+      for (let i = 0; i < 10 && prevEl; i++) {
+        const text = prevEl.textContent || "";
+        const nameMatch = text.match(/(ユニバーサル・エクスプレス・パス\s*\d+\s*～[^～]+～)/);
+        if (nameMatch) {
+          passName = nameMatch[1].trim().replace(/\s+/g, " ");
+          break;
+        }
+        prevEl = prevEl.previousElementSibling;
+      }
+
+      // 方法2: 親要素のテキストから探す（より狭い範囲）
+      if (!passName) {
+        let parent = link.parentElement;
+        for (let i = 0; i < 3 && parent; i++) {
+          const text = parent.textContent || "";
           const nameMatch = text.match(/(ユニバーサル・エクスプレス・パス\s*\d+\s*～[^～]+～)/);
           if (nameMatch) {
             passName = nameMatch[1].trim().replace(/\s+/g, " ");
             break;
           }
-          prevEl = prevEl.previousElementSibling;
-        }
-
-        // 方法2: 親要素のテキストから探す（より狭い範囲）
-        if (!passName) {
-          let parent = link.parentElement;
-          for (let i = 0; i < 3 && parent; i++) {
-            const text = parent.textContent || "";
-            const nameMatch = text.match(/(ユニバーサル・エクスプレス・パス\s*\d+\s*～[^～]+～)/);
-            if (nameMatch) {
-              passName = nameMatch[1].trim().replace(/\s+/g, " ");
-              break;
-            }
-            parent = parent.parentElement;
-          }
-        }
-
-        // 方法3: リンクテキストからLコード部分を除去
-        if (!passName) {
-          const linkText = link.textContent.trim();
-          if (linkText.includes("エクスプレス")) {
-            passName = linkText.replace(/Lコード[：:][^チ]+チケット購入ページへ進む/g, "").trim();
-          }
-        }
-
-        // 価格を取得
-        let minPrice = null;
-        let parent = link.parentElement;
-        for (let i = 0; i < 3 && parent; i++) {
-          const priceMatches = parent.textContent.match(/([0-9,]+)\s*円/g);
-          if (priceMatches) {
-            const prices = priceMatches
-              .map((p) => parseInt(p.replace(/[,円\s]/g, ""), 10))
-              .filter((p) => p >= 5000 && p <= 100000);
-            if (prices.length > 0) {
-              minPrice = Math.min(...prices);
-              break;
-            }
-          }
           parent = parent.parentElement;
         }
+      }
 
-        // 各Lコードを個別に登録（公演日程はパスごとに取得できないため空）
-        lCodes.forEach((lCode) => {
-          if (seen.has(lCode)) return;
-          seen.add(lCode);
-          results.push({
-            passName: passName || `エクスプレス・パス（Lコード:${lCode}）`,
-            lCode,
-            minPrice,
-          });
+      // 方法3: リンクテキストからLコード部分を除去
+      if (!passName) {
+        const linkText = link.textContent.trim();
+        if (linkText.includes("エクスプレス")) {
+          passName = linkText.replace(/Lコード[：:][^チ]+チケット購入ページへ進む/g, "").trim();
+        }
+      }
+
+      // 価格を取得
+      let minPrice = null;
+      let parent = link.parentElement;
+      for (let i = 0; i < 3 && parent; i++) {
+        const priceMatches = parent.textContent.match(/([0-9,]+)\s*円/g);
+        if (priceMatches) {
+          const prices = priceMatches
+            .map((p) => parseInt(p.replace(/[,円\s]/g, ""), 10))
+            .filter((p) => p >= 5000 && p <= 100000);
+          if (prices.length > 0) {
+            minPrice = Math.min(...prices);
+            break;
+          }
+        }
+        parent = parent.parentElement;
+      }
+
+      // 各Lコードを個別に登録
+      lCodes.forEach((lCode) => {
+        if (seen.has(lCode)) return;
+        seen.add(lCode);
+        results.push({
+          passName: passName || `エクスプレス・パス（Lコード:${lCode}）`,
+          lCode,
+          minPrice,
         });
       });
-
-      return results;
     });
 
-    return passes;
+    return results;
+  });
+
+  // ページを閉じずに返す（後続のfetchで使用するため）
+  return { passes, page };
+}
+
+/**
+ * 各Lコードの検索ページから公演日程を取得
+ * ブラウザコンテキスト内のfetch()を使用し、Cookie/セッションを継承する
+ * @param {Page} page - 一覧ページがロード済みのPuppeteerページ
+ * @param {Array} passList - scrapeEpListPage の結果
+ * @return {Object} lCode → { performanceFrom, performanceTo }
+ */
+async function scrapePerformanceDates(page, passList) {
+  const dateMap = {};
+  const uniqueLCodes = [...new Set(passList.map((p) => p.lCode))];
+
+  console.log(`  ${uniqueLCodes.length}件のLコードを処理...\n`);
+
+  for (const lCode of uniqueLCodes) {
+    const searchUrl = `https://l-tike.com/search/?lcd=${lCode}`;
+    console.log(`  [${lCode}] fetch: ${searchUrl}`);
+
+    try {
+      // ブラウザコンテキスト内でfetchを実行（Cookie/セッション継承）
+      const result = await page.evaluate(async (url) => {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+          const res = await fetch(url, {
+            signal: controller.signal,
+            credentials: "include",
+          });
+          clearTimeout(timeoutId);
+
+          const html = await res.text();
+
+          // 公演日程の日付パターンを探す
+          // パターン1: "2026/3/4(水)～2026/3/31(月)" 形式
+          // パターン2: "2026年3月4日～2026年3月31日" 形式
+          // パターン3: "2026/03/04～2026/03/31" 形式
+          const datePatterns = [
+            /(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})[日]?\s*(?:[（(][^）)]+[）)])?\s*～\s*(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})/,
+            /公演[期日]間?\s*[：:]*\s*(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})[\s\S]*?～[\s\S]*?(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})/,
+          ];
+
+          let from = null;
+          let to = null;
+          for (const pattern of datePatterns) {
+            const match = html.match(pattern);
+            if (match) {
+              from = `${match[1]}-${String(match[2]).padStart(2, "0")}-${String(match[3]).padStart(2, "0")}`;
+              to = `${match[4]}-${String(match[5]).padStart(2, "0")}-${String(match[6]).padStart(2, "0")}`;
+              break;
+            }
+          }
+
+          // デバッグ: HTMLの一部を返す（日付が見つからない場合）
+          let debugSnippet = "";
+          if (!from) {
+            // 「公演」「期間」「日程」周辺のテキストを探す
+            const contextMatch = html.match(/.{0,100}(公演|期間|日程|performance).{0,100}/i);
+            debugSnippet = contextMatch ? contextMatch[0].replace(/<[^>]+>/g, " ").substring(0, 200) : "";
+          }
+
+          return { from, to, status: "ok", htmlLength: html.length, debugSnippet };
+        } catch (e) {
+          return {
+            from: null,
+            to: null,
+            status: e.name === "AbortError" ? "timeout" : e.message,
+            htmlLength: 0,
+            debugSnippet: "",
+          };
+        }
+      }, searchUrl);
+
+      if (result.from && result.to) {
+        console.log(`    → OK: ${result.from} ～ ${result.to} (${result.htmlLength}bytes)`);
+        dateMap[lCode] = { performanceFrom: result.from, performanceTo: result.to };
+      } else {
+        console.log(`    → ${result.status} (${result.htmlLength}bytes)`);
+        if (result.debugSnippet) {
+          console.log(`    debug: ${result.debugSnippet}`);
+        }
+      }
+    } catch (e) {
+      console.log(`    → エラー: ${e.message}`);
+    }
+
+    // 各リクエスト間に3秒待機
+    await sleep(3000);
+  }
+
+  // フォールバック: fetchで取得できなかったLコードに対してPuppeteerページ遷移を試行
+  const missingLCodes = uniqueLCodes.filter((lc) => !dateMap[lc]);
+  if (missingLCodes.length > 0) {
+    console.log(`\n  フォールバック: ${missingLCodes.length}件をPuppeteerで再試行...`);
+    for (const lCode of missingLCodes) {
+      try {
+        const dates = await scrapeSearchPageWithPuppeteer(page.browser(), lCode);
+        if (dates) {
+          console.log(`    [${lCode}] → OK: ${dates.performanceFrom} ～ ${dates.performanceTo}`);
+          dateMap[lCode] = dates;
+        } else {
+          console.log(`    [${lCode}] → 日程取得失敗`);
+        }
+      } catch (e) {
+        console.log(`    [${lCode}] → エラー: ${e.message}`);
+      }
+      await sleep(3000);
+    }
+  }
+
+  return dateMap;
+}
+
+/**
+ * Puppeteerで検索ページに直接遷移して日程を取得（フォールバック用）
+ */
+async function scrapeSearchPageWithPuppeteer(browser, lCode) {
+  const page = await browser.newPage();
+  try {
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    );
+
+    await page.goto(`https://l-tike.com/search/?lcd=${lCode}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 25000,
+    });
+    await sleep(5000);
+
+    const result = await page.evaluate(() => {
+      const text = document.body ? document.body.innerText : "";
+      // 日付パターンを探す
+      const match = text.match(/(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})[日]?\s*(?:[（(][^）)]+[）)])?\s*～\s*(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})/);
+      if (match) {
+        return {
+          from: `${match[1]}-${String(match[2]).padStart(2, "0")}-${String(match[3]).padStart(2, "0")}`,
+          to: `${match[4]}-${String(match[5]).padStart(2, "0")}-${String(match[6]).padStart(2, "0")}`,
+        };
+      }
+      return null;
+    });
+
+    if (result) {
+      return { performanceFrom: result.from, performanceTo: result.to };
+    }
+    return null;
+  } catch (e) {
+    console.log(`    [${lCode}] Puppeteer: ${e.message.substring(0, 80)}`);
+    return null;
   } finally {
     await page.close();
   }
