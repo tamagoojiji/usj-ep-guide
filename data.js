@@ -664,9 +664,10 @@ var FALLBACK_PASSES = [
 
 // === レコメンドアルゴリズム ===
 function calculateResult(date, height, attractionTags, budget) {
-  // Step 1: 日付フィルタ（価格データがある日付のみ）
+  // Step 1: 日付フィルタ（価格データあり、またはローチケ掲載中）
   var available = PASSES.filter(function (p) {
-    return p.pricing[date] !== undefined;
+    if (p.pricing[date] !== undefined) return true;
+    return p.lawson && p.lawson.salesStatus;
   });
 
   if (available.length === 0) {

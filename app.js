@@ -365,7 +365,9 @@
 
   function hasAnyPassOnDate(dateStr) {
     return PASSES.some(function (p) {
-      return p.pricing[dateStr] !== undefined;
+      if (p.pricing[dateStr] !== undefined) return true;
+      // 価格データがない日付でも、ローチケに掲載中のパスがあれば有効
+      return p.lawson && p.lawson.salesStatus;
     });
   }
 
@@ -710,7 +712,7 @@
       html += '<p class="price-annotation">※価格は販売開始後に確定します</p>';
     }
 
-    html += buildSalesBadge(p);
+    html += buildSalesBadge(p, hasDailyPrice);
     html += '<p class="result-card-desc">' + p.description + '</p>';
 
     if (isMain) {
@@ -726,14 +728,17 @@
   }
 
   // === 販売状況バッジ ===
-  function buildSalesBadge(pass) {
+  function buildSalesBadge(pass, hasDailyPrice) {
     var html = '';
 
     // ローチケデータがある場合はそちらを優先
     if (pass.lawson && pass.lawson.salesStatus) {
       var status = pass.lawson.salesStatus;
       if (status === "販売中") {
-        if (pass.lawson.salesTo) {
+        // 日別価格がない（5月以降等）→ 販売予定として表示
+        if (!hasDailyPrice) {
+          html += '<span class="sales-badge sales-badge--upcoming">ローチケで販売予定</span>';
+        } else if (pass.lawson.salesTo) {
           var tp = pass.lawson.salesTo.split('-');
           var tMonth = parseInt(tp[1], 10);
           var tDay = parseInt(tp[2], 10);
@@ -921,14 +926,14 @@
   // === 期限切れチェック ===
   function isExpired() {
     var now = new Date();
-    var expiry = new Date(2026, 3, 16);
+    var expiry = new Date(2026, 5, 1);
     return now >= expiry;
   }
 
   // ============================================================
   //  パスデータをAPI取得（キャッシュ優先 + フォールバック付き）
   // ============================================================
-  var PASS_CACHE_KEY = "ep_pass_cache_v2";
+  var PASS_CACHE_KEY = "ep_pass_cache_v3";
   var PASS_CACHE_MAX_AGE = 6 * 60 * 60 * 1000; // 6時間
 
   function loadPassData(callback) {
