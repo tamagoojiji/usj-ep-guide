@@ -704,6 +704,9 @@
     } else if (p.lawson && p.lawson.minPrice) {
       html += '<p class="result-card-price" style="color:' + p.color + '">¥' + p.lawson.minPrice.toLocaleString() + '~</p>';
       html += '<p class="price-annotation">※日別価格は販売開始後に確定します</p>';
+    } else if (p.historicalMinPrice) {
+      html += '<p class="result-card-price" style="color:' + p.color + '">¥' + p.historicalMinPrice.toLocaleString() + '~</p>';
+      html += '<p class="price-annotation">※過去の最低価格です。日によって変動します</p>';
     } else {
       html += '<p class="result-card-price price-undecided">価格未定</p>';
       html += '<p class="price-annotation">※価格は販売開始後に確定します</p>';
