@@ -93,7 +93,7 @@ async function main() {
     console.log("Step 2: 各Lコードの公演日程を取得...\n");
     const performanceDates = {};
     for (const pass of passList) {
-      const dates = await scrapePerformanceDates(browser, pass.lCode);
+      const dates = await scrapePerformanceDates(pass.lCode);
       if (dates) {
         performanceDates[pass.lCode] = dates;
         console.log(`  ${pass.lCode}: ${dates.from || "?"} 〜 ${dates.to || "?"}`);
@@ -270,79 +270,103 @@ async function scrapeEpListPage(browser) {
 }
 
 /**
- * Lコードの検索ページから公演日程を取得
- * @param {Browser} browser
+ * Lコードの検索ページから公演日程を取得（fetch版）
+ * Puppeteerではなく直接HTTPリクエストでHTML取得 → Regexパース
  * @param {string} lCode
  * @return {Object|null} { from: "YYYY-MM-DD", to: "YYYY-MM-DD" }
  */
-async function scrapePerformanceDates(browser, lCode) {
+async function scrapePerformanceDates(lCode) {
   const url = `https://l-tike.com/search/?lcd=${lCode}`;
-  const page = await browser.newPage();
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      await page.setUserAgent(
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-      );
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-      await sleep(3000);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
 
-      const dates = await page.evaluate(() => {
-        // ページ全体のテキストから公演日程パターンを探す
-        const text = document.body.innerText || "";
-
-        // パターン1: "YYYY/MM/DD(曜) ～ YYYY/MM/DD(曜)" or "YYYY/M/D(曜)〜YYYY/M/D(曜)"
-        const rangeMatch = text.match(
-          /(\d{4})\/(\d{1,2})\/(\d{1,2})\s*\([^)]*\)\s*[～〜~ー-]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/
-        );
-        if (rangeMatch) {
-          const from = `${rangeMatch[1]}-${rangeMatch[2].padStart(2, "0")}-${rangeMatch[3].padStart(2, "0")}`;
-          const to = `${rangeMatch[4]}-${rangeMatch[5].padStart(2, "0")}-${rangeMatch[6].padStart(2, "0")}`;
-          return { from, to };
-        }
-
-        // パターン2: "公演期間" の近くの日付
-        const perfMatch = text.match(
-          /公演[期間日]*[：:\s]*(\d{4})\/(\d{1,2})\/(\d{1,2})[^]*?[～〜~ー-]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/
-        );
-        if (perfMatch) {
-          const from = `${perfMatch[1]}-${perfMatch[2].padStart(2, "0")}-${perfMatch[3].padStart(2, "0")}`;
-          const to = `${perfMatch[4]}-${perfMatch[5].padStart(2, "0")}-${perfMatch[6].padStart(2, "0")}`;
-          return { from, to };
-        }
-
-        // パターン3: meta tagやJSON-LDから探す
-        const scripts = document.querySelectorAll('script[type="application/ld+json"]');
-        for (const script of scripts) {
-          try {
-            const json = JSON.parse(script.textContent);
-            if (json.startDate && json.endDate) {
-              return {
-                from: json.startDate.substring(0, 10),
-                to: json.endDate.substring(0, 10),
-              };
-            }
-          } catch (e) { /* ignore */ }
-        }
-
-        return null;
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+        },
+        redirect: "follow",
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
-      await page.close();
-      return dates;
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const html = await response.text();
+      return parseDatesFromHtml(html);
     } catch (err) {
       if (attempt === 0) {
         console.log(`  [リトライ] ${lCode}: ${err.message}`);
-        await sleep(5000);
+        await sleep(3000);
       } else {
         console.log(`  [エラー] ${lCode}: ${err.message}`);
-        await page.close();
         return null;
       }
     }
   }
 
-  await page.close();
+  return null;
+}
+
+/**
+ * HTMLテキストから公演日程を抽出
+ * @param {string} html
+ * @return {Object|null} { from: "YYYY-MM-DD", to: "YYYY-MM-DD" }
+ */
+function parseDatesFromHtml(html) {
+  // パターン1: "YYYY/MM/DD(曜) ～ YYYY/MM/DD(曜)"
+  const rangeMatch = html.match(
+    /(\d{4})\/(\d{1,2})\/(\d{1,2})\s*\([^)]*\)\s*[～〜~ー\-]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/
+  );
+  if (rangeMatch) {
+    return {
+      from: `${rangeMatch[1]}-${rangeMatch[2].padStart(2, "0")}-${rangeMatch[3].padStart(2, "0")}`,
+      to: `${rangeMatch[4]}-${rangeMatch[5].padStart(2, "0")}-${rangeMatch[6].padStart(2, "0")}`,
+    };
+  }
+
+  // パターン2: "公演期間" 近くの日付
+  const perfMatch = html.match(
+    /公演[期間日]*[：:\s]*(\d{4})\/(\d{1,2})\/(\d{1,2})[\s\S]*?[～〜~ー\-]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/
+  );
+  if (perfMatch) {
+    return {
+      from: `${perfMatch[1]}-${perfMatch[2].padStart(2, "0")}-${perfMatch[3].padStart(2, "0")}`,
+      to: `${perfMatch[4]}-${perfMatch[5].padStart(2, "0")}-${perfMatch[6].padStart(2, "0")}`,
+    };
+  }
+
+  // パターン3: JSON-LD
+  const ldMatches = html.matchAll(/<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+  for (const m of ldMatches) {
+    try {
+      const json = JSON.parse(m[1]);
+      if (json.startDate && json.endDate) {
+        return {
+          from: json.startDate.substring(0, 10),
+          to: json.endDate.substring(0, 10),
+        };
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  // パターン4: "YYYY年MM月DD日" 形式の範囲
+  const jpMatch = html.match(
+    /(\d{4})年(\d{1,2})月(\d{1,2})日\s*[～〜~ー\-]\s*(\d{4})年(\d{1,2})月(\d{1,2})日/
+  );
+  if (jpMatch) {
+    return {
+      from: `${jpMatch[1]}-${jpMatch[2].padStart(2, "0")}-${jpMatch[3].padStart(2, "0")}`,
+      to: `${jpMatch[4]}-${jpMatch[5].padStart(2, "0")}-${jpMatch[6].padStart(2, "0")}`,
+    };
+  }
+
   return null;
 }
 
