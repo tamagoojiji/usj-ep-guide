@@ -91,16 +91,29 @@ async function main() {
       process.exit(0);
     }
 
-    // Step 2: 各Lコードの公演日程を取得（ブラウザ内fetch使用）
-    console.log("Step 2: 各Lコードの公演日程を取得...");
+    // Step 2: 一覧ページのセクションテキストをデバッグ出力
+    console.log("Step 2: 一覧ページのパスセクション構造を調査...\n");
+    passList.forEach((pass) => {
+      console.log(`--- ${pass.passName} (${pass.lCode}) ---`);
+      console.log(`  価格: ${pass.minPrice || "なし"}`);
+      if (pass.sectionText) {
+        // 改行で分割して各行を出力（空行除去）
+        const lines = pass.sectionText.split("\n").filter((l) => l.trim()).slice(0, 15);
+        lines.forEach((line) => console.log(`  | ${line.trim()}`));
+      }
+      console.log();
+    });
+
+    // Step 3: 各Lコードの公演日程を取得（ブラウザ内fetch使用）
+    console.log("Step 3: 各Lコードの公演日程を取得...");
     const dateMap = await scrapePerformanceDates(listPage, passList);
     await listPage.close();
 
     const datesFound = Object.keys(dateMap).length;
     console.log(`  ${datesFound}/${passList.length}件の公演日程を取得\n`);
 
-    // Step 3: passIdマッピング + データ整形
-    console.log("Step 3: passIdマッピング...\n");
+    // Step 4: passIdマッピング + データ整形
+    console.log("Step 4: passIdマッピング...\n");
     const dataList = passList.map((pass) => {
       const passId = matchPassId(pass.passName);
       const dates = dateMap[pass.lCode] || {};
@@ -121,8 +134,8 @@ async function main() {
       };
     });
 
-    // Step 4: GASへPOST送信
-    console.log(`\nStep 4: GASへデータ送信 (${dataList.length}件)...`);
+    // Step 5: GASへPOST送信
+    console.log(`\nStep 5: GASへデータ送信 (${dataList.length}件)...`);
     const gasResult = await postToGas(GAS_URL, API_KEY, dataList);
     console.log(`  GAS応答: ${JSON.stringify(gasResult)}`);
 
@@ -226,6 +239,16 @@ async function scrapeEpListPage(browser) {
         parent = parent.parentElement;
       }
 
+      // リンク周辺のHTML構造をデバッグ出力用に取得
+      let sectionHtml = "";
+      let sectionEl = link.parentElement;
+      for (let i = 0; i < 5 && sectionEl; i++) {
+        sectionEl = sectionEl.parentElement;
+      }
+      if (sectionEl) {
+        sectionHtml = sectionEl.innerText.substring(0, 500);
+      }
+
       // 各Lコードを個別に登録
       lCodes.forEach((lCode) => {
         if (seen.has(lCode)) return;
@@ -234,6 +257,7 @@ async function scrapeEpListPage(browser) {
           passName: passName || `エクスプレス・パス（Lコード:${lCode}）`,
           lCode,
           minPrice,
+          sectionText: sectionHtml,
         });
       });
     });
