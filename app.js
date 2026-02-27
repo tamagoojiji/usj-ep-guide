@@ -366,9 +366,12 @@
   function hasAnyPassOnDate(dateStr) {
     return PASSES.some(function (p) {
       if (p.pricing[dateStr] !== undefined) return true;
-      // ローチケの公演期間内であれば有効
-      if (p.lawson && p.lawson.performanceFrom && p.lawson.performanceTo) {
-        return dateStr >= p.lawson.performanceFrom && dateStr <= p.lawson.performanceTo;
+      // ローチケの販売期間内であれば有効（salesToがあればそれを上限、なければperformanceTo）
+      if (p.lawson && p.lawson.performanceFrom) {
+        var upperDate = p.lawson.salesTo || p.lawson.performanceTo;
+        if (upperDate) {
+          return dateStr >= p.lawson.performanceFrom && dateStr <= upperDate;
+        }
       }
       return false;
     });
@@ -936,7 +939,7 @@
   // ============================================================
   //  パスデータをAPI取得（キャッシュ優先 + フォールバック付き）
   // ============================================================
-  var PASS_CACHE_KEY = "ep_pass_cache_v4";
+  var PASS_CACHE_KEY = "ep_pass_cache_v5";
   var PASS_CACHE_MAX_AGE = 6 * 60 * 60 * 1000; // 6時間
 
   function loadPassData(callback) {
