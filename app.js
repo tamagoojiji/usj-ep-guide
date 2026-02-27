@@ -1024,7 +1024,7 @@
     }
     if (priceRange && priceRange.to) {
       var t = priceRange.to.split("-");
-      parts.push("価格データ: " + Number(t[1]) + "月" + Number(t[2]) + "日まで");
+      parts.push("対応期間: " + Number(t[1]) + "月" + Number(t[2]) + "日まで");
     }
 
     var text = parts.join(" / ");
