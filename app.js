@@ -366,8 +366,11 @@
   function hasAnyPassOnDate(dateStr) {
     return PASSES.some(function (p) {
       if (p.pricing[dateStr] !== undefined) return true;
-      // 価格データがない日付でも、ローチケに掲載中のパスがあれば有効
-      return p.lawson && p.lawson.salesStatus;
+      // ローチケの公演期間内であれば有効
+      if (p.lawson && p.lawson.performanceFrom && p.lawson.performanceTo) {
+        return dateStr >= p.lawson.performanceFrom && dateStr <= p.lawson.performanceTo;
+      }
+      return false;
     });
   }
 
@@ -926,7 +929,7 @@
   // === 期限切れチェック ===
   function isExpired() {
     var now = new Date();
-    var expiry = new Date(2026, 5, 1);
+    var expiry = new Date(2026, 3, 16);
     return now >= expiry;
   }
 
