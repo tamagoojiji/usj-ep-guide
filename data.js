@@ -11,7 +11,7 @@ var PASS_DATA_LOADED = false;
 var UPCOMING_PASSES = [];
 
 // === 季節限定パスID（通年型でないもの → 予測表示しない） ===
-var SEASONAL_PASS_IDS = ["ep4_dino_4d", "ep4_space_minion_mission", "ep4_space_minion", "ep4_backdrop_race"];
+var SEASONAL_PASS_IDS = ["ep4_dino_4d", "ep4_space_minion_mission", "ep4_space_minion", "ep4_backdrop_race", "ep4_minion_theater", "ep4_race_theater"];
 
 function isRegularPass(p) {
   return SEASONAL_PASS_IDS.indexOf(p.id) === -1;
