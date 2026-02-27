@@ -113,10 +113,10 @@ async function main() {
         console.log(`価格更新: ${JSON.stringify(updateResult)}`);
       }
 
-      // 売り切れの日付があれば価格マスターから削除
+      // 売り切れの日付のステータスを「売切」に更新
       if (domData.soldOut.length > 0) {
-        const deleteResult = await postDeleteSoldOutPrices(GAS_URL, API_KEY, pass.passId, domData.soldOut);
-        console.log(`売切削除: ${JSON.stringify(deleteResult)}`);
+        const markResult = await postMarkDatesAsSoldOut(GAS_URL, API_KEY, pass.passId, domData.soldOut);
+        console.log(`売切マーク: ${JSON.stringify(markResult)}`);
       }
 
       if (domData.available.length === 0) {
@@ -335,11 +335,11 @@ async function postPricesDirectly(gasUrl, apiKey, passId, prices) {
 }
 
 /**
- * GAS APIに売り切れ日の価格削除を依頼
+ * GAS APIに売り切れ日のステータス更新を依頼
  */
-async function postDeleteSoldOutPrices(gasUrl, apiKey, passId, soldOutDates) {
+async function postMarkDatesAsSoldOut(gasUrl, apiKey, passId, soldOutDates) {
   const body = JSON.stringify({
-    action: "deletePricesForDates",
+    action: "markDatesAsSoldOut",
     apiKey: apiKey,
     data: {
       passId: passId,
@@ -355,7 +355,7 @@ async function postDeleteSoldOutPrices(gasUrl, apiKey, passId, soldOutDates) {
   });
 
   if (!response.ok) {
-    throw new Error(`GAS APIエラー（削除）: ${response.status} ${response.statusText}`);
+    throw new Error(`GAS APIエラー（売切マーク）: ${response.status} ${response.statusText}`);
   }
 
   return await response.json();
