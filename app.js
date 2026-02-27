@@ -637,7 +637,7 @@
               upHtml += '<span class="sales-badge sales-badge--upcoming">販売予定</span>';
             }
           } else if (up.salesStatus === "販売中") {
-            upHtml += '<span class="sales-badge sales-badge--active">販売中</span>';
+            upHtml += '<span class="sales-badge sales-badge--active">ローチケで販売中</span>';
           } else if (up.salesStatus === "受付終了") {
             upHtml += '<span class="sales-badge sales-badge--ended">受付終了</span>';
           } else if (up.salesStatus) {
@@ -706,7 +706,7 @@
       html += '<p class="price-annotation">※日別価格は販売開始後に確定します</p>';
     } else if (p.historicalMinPrice) {
       html += '<p class="result-card-price" style="color:' + p.color + '">¥' + p.historicalMinPrice.toLocaleString() + '~</p>';
-      html += '<p class="price-annotation">※過去の最低価格です。日によって変動します</p>';
+      html += '<p class="price-annotation">※直近の最低価格です。日によって変動します</p>';
     } else {
       html += '<p class="result-card-price price-undecided">価格未定</p>';
       html += '<p class="price-annotation">※価格は販売開始後に確定します</p>';
@@ -739,9 +739,9 @@
           var tp = pass.lawson.salesTo.split('-');
           var tMonth = parseInt(tp[1], 10);
           var tDay = parseInt(tp[2], 10);
-          html += '<span class="sales-badge sales-badge--active">' + tMonth + '月' + tDay + '日まで販売</span>';
+          html += '<span class="sales-badge sales-badge--active">ローチケで' + tMonth + '月' + tDay + '日まで販売</span>';
         } else {
-          html += '<span class="sales-badge sales-badge--active">販売中</span>';
+          html += '<span class="sales-badge sales-badge--active">ローチケで販売中</span>';
         }
       } else if (status === "販売予定") {
         if (pass.lawson.salesFrom) {
@@ -930,7 +930,7 @@
   // ============================================================
   //  パスデータをAPI取得（キャッシュ優先 + フォールバック付き）
   // ============================================================
-  var PASS_CACHE_KEY = "ep_pass_cache";
+  var PASS_CACHE_KEY = "ep_pass_cache_v2";
   var PASS_CACHE_MAX_AGE = 6 * 60 * 60 * 1000; // 6時間
 
   function loadPassData(callback) {
