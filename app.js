@@ -607,7 +607,13 @@
 
     // 身長警告
     var warningHtml = "";
-    if (result.heightWarning) {
+    if (result.attractionMismatch) {
+      warningHtml =
+        '<div class="height-warning">' +
+          '<p>⚠️ 選んだアトラクションを含むパスは、お子さまの身長制限により表示できませんでした。' +
+          '代わりに身長条件に合うおすすめパスを表示しています。</p>' +
+        '</div>';
+    } else if (result.heightWarning) {
       warningHtml =
         '<div class="height-warning">' +
           '<p>⚠️ お子さまの身長では一部のアトラクションに身長制限があります。' +

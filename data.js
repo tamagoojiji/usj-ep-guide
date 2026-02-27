@@ -751,10 +751,37 @@ function calculateResult(date, height, attractionTags, budget) {
   });
 
   // matchScore=0 のパスは除外（こだわりなし以外）
+  var attractionMismatch = false;
   if (!hasAny) {
-    scored = scored.filter(function (s) {
+    var matched = scored.filter(function (s) {
       return s.matchScore > 0;
     });
+
+    if (matched.length === 0 && !heightWarning) {
+      // 身長フィルタ前のリストでマッチするパスがあったか確認
+      var beforeHeightMatch = PASSES.filter(function (p) {
+        // 日付フィルタ
+        if (p.pricing[date] === undefined) {
+          if (!(p.lawson && p.lawson.performanceFrom)) {
+            if (!isRegularPass(p)) return false;
+          } else {
+            var upper = p.lawson.salesTo || p.lawson.performanceTo;
+            if (!(upper && date >= p.lawson.performanceFrom && date <= upper)) {
+              if (!isRegularPass(p)) return false;
+            }
+          }
+        }
+        // アトラクションマッチ
+        return attractionTags.some(function (tag) {
+          return p.tags.indexOf(tag) !== -1;
+        });
+      });
+      if (beforeHeightMatch.length > 0) {
+        attractionMismatch = true;
+      }
+    }
+
+    scored = matched;
   }
 
   if (scored.length === 0) {
@@ -786,6 +813,7 @@ function calculateResult(date, height, attractionTags, budget) {
   return {
     main: scored[0] || null,
     others: scored.slice(1, 3),
-    heightWarning: heightWarning
+    heightWarning: heightWarning,
+    attractionMismatch: attractionMismatch
   };
 }
