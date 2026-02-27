@@ -28,7 +28,14 @@ jobs:
       - name: Xvfbインストール（非headlessブラウザ用）
         run: sudo apt-get install -y xvfb
 
-      - name: EP価格スクショ取得実行
+      - name: 販売中パス自動検出＆ステータス更新
+        working-directory: scripts
+        env:
+          GAS_WEB_APP_URL: ${{ secrets.GAS_WEB_APP_URL }}
+          GAS_API_KEY: ${{ secrets.GAS_API_KEY }}
+        run: xvfb-run --auto-servernum node detect-active-passes.js --update
+
+      - name: EP価格DOM抽出実行
         working-directory: scripts
         env:
           GAS_WEB_APP_URL: ${{ secrets.GAS_WEB_APP_URL }}
