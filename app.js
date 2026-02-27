@@ -743,7 +743,7 @@
       if (status === "販売中") {
         // 日別価格がない（5月以降等）→ 販売予定として表示
         if (!hasDailyPrice) {
-          html += '<span class="sales-badge sales-badge--upcoming">ローチケで販売予定</span>';
+          html += '<span class="sales-badge sales-badge--upcoming">随時販売予定</span>';
         } else if (pass.lawson.salesTo) {
           var tp = pass.lawson.salesTo.split('-');
           var tMonth = parseInt(tp[1], 10);
