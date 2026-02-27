@@ -1,5 +1,5 @@
 /**
- * USJ EP価格ページ スクリーンショット撮影 & Gemini Vision 価格読み取り
+ * USJ EP価格ページ DOM抽出 → 価格マスター更新
  *
  * 使い方:
  *   node scrape-ep-prices.js
@@ -8,8 +8,9 @@
  *   GAS_WEB_APP_URL - GASデプロイメントURL
  *   GAS_API_KEY     - PRICE_UPDATE_API_KEY と同じ値
  *
- * 各パスの価格ページを開き、カレンダーのスクリーンショットを撮影
- * → GASに送信 → Gemini Visionが画像から価格を読み取り → 価格マスター更新
+ * 各パスの価格ページを開き、gds-calendar-dayのDOMから直接データを抽出
+ * → 販売中の日付のみGASへ送信 → 価格マスター更新
+ * → 売り切れの日付は価格マスターから削除
  */
 
 const puppeteer = require("puppeteer");
@@ -96,38 +97,33 @@ async function main() {
 
     try {
       const url = ensureConfigParam(pass.url);
-      const screenshotBase64 = await captureCalendarScreenshot(browser, url);
+      const domData = await openPageAndExtractDOM(browser, url);
 
-      if (!screenshotBase64) {
+      if (!domData) {
         console.log(`スキップ (${pass.passId}): カレンダーが表示されませんでした`);
         results.push({ passId: pass.passId, success: true, skipped: true });
         continue;
       }
 
-      console.log(`スクショ撮影完了 (${Math.round(screenshotBase64.length / 1024)}KB base64)`);
+      console.log(`DOM抽出: 販売中=${domData.available.length} 売切=${domData.soldOut.length}`);
 
-      // GAS APIにスクショを送信 → Gemini Visionで価格読み取り（リトライ付き）
-      let gasResult = null;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        gasResult = await postScreenshotToGas(GAS_URL, API_KEY, pass.passId, screenshotBase64);
-        if (gasResult.success || !gasResult.error || !gasResult.error.includes("high demand")) {
-          break;
-        }
-        console.log(`Gemini高負荷 — ${attempt}/3回目、30秒後にリトライ`);
-        await sleep(30000);
+      // 販売中の日付があれば価格更新
+      if (domData.available.length > 0) {
+        const updateResult = await postPricesDirectly(GAS_URL, API_KEY, pass.passId, domData.available);
+        console.log(`価格更新: ${JSON.stringify(updateResult)}`);
       }
-      console.log(`GAS応答: ${JSON.stringify(gasResult)}`);
 
-      if (gasResult.success) {
-        results.push({ passId: pass.passId, success: true, result: gasResult });
+      // 売り切れの日付があれば価格マスターから削除
+      if (domData.soldOut.length > 0) {
+        const deleteResult = await postDeleteSoldOutPrices(GAS_URL, API_KEY, pass.passId, domData.soldOut);
+        console.log(`売切削除: ${JSON.stringify(deleteResult)}`);
+      }
+
+      if (domData.available.length === 0) {
+        console.log(`完全売切: ${pass.passId}（全${domData.soldOut.length}日）`);
+        results.push({ passId: pass.passId, success: true, soldOut: true });
       } else {
-        // Geminiが価格を読み取れなかった場合はスキップ扱い
-        if (gasResult.error && gasResult.error.includes("抽出できません")) {
-          console.log(`スキップ (${pass.passId}): 価格データなし（販売期間外の可能性）`);
-          results.push({ passId: pass.passId, success: true, skipped: true });
-        } else {
-          throw new Error(gasResult.error || "GAS処理エラー");
-        }
+        results.push({ passId: pass.passId, success: true, available: domData.available.length });
       }
     } catch (err) {
       console.error(`エラー (${pass.passId}): ${err.message}`);
@@ -145,10 +141,18 @@ async function main() {
 
   // 結果サマリー
   console.log("\n=== 結果サマリー ===");
-  const succeeded = results.filter((r) => r.success && !r.skipped).length;
+  const succeeded = results.filter((r) => r.success && !r.skipped && !r.soldOut).length;
+  const soldOut = results.filter((r) => r.soldOut).length;
   const skipped = results.filter((r) => r.skipped).length;
   const failed = results.filter((r) => !r.success).length;
-  console.log(`成功: ${succeeded} / スキップ: ${skipped} / 失敗: ${failed} / 合計: ${results.length}`);
+  console.log(`成功: ${succeeded} / 完全売切: ${soldOut} / スキップ: ${skipped} / 失敗: ${failed} / 合計: ${results.length}`);
+
+  if (soldOut > 0) {
+    console.log("\n完全売切のパス:");
+    results
+      .filter((r) => r.soldOut)
+      .forEach((r) => console.log(`  - ${r.passId}`));
+  }
 
   if (skipped > 0) {
     console.log("\nスキップしたパス:");
@@ -166,11 +170,13 @@ async function main() {
   }
 }
 
+// === ページ操作・DOM抽出 ===
+
 /**
- * ページを開いてカレンダー部分のフルページスクリーンショットを撮影
- * @return {string|null} base64文字列、またはカレンダー非表示ならnull
+ * ページを開いてカレンダーDOMから日付・価格・利用可否を直接抽出
+ * @return {Object|null} { available: [{date, price}], soldOut: [date] } またはnull
  */
-async function captureCalendarScreenshot(browser, url) {
+async function openPageAndExtractDOM(browser, url) {
   const page = await browser.newPage();
 
   try {
@@ -235,27 +241,127 @@ async function captureCalendarScreenshot(browser, url) {
     // 描画完了を待つ
     await sleep(3000);
 
-    // カレンダー状態ログ（参考情報、スキップ判定には使わない）
-    const calendarInfo = await page.evaluate(() => {
-      const days = document.querySelectorAll("gds-calendar-day");
-      const enabled = Array.from(days).filter(d => d.getAttribute("data-disabled") !== "true").length;
-      return { total: days.length, enabled: enabled };
-    });
-    console.log(`カレンダー状態: total=${calendarInfo.total} enabled=${calendarInfo.enabled}`);
-
-    // フルページスクリーンショット撮影（常に撮影→Geminiが価格有無を判断）
-    const screenshotBuffer = await page.screenshot({
-      fullPage: true,
-      type: "jpeg",
-      quality: 85,
-    });
-
-    const base64 = screenshotBuffer.toString("base64");
-    return base64;
+    // DOM直接抽出
+    const domData = await extractCalendarFromDOM(page);
+    return domData;
   } finally {
     await page.close();
   }
 }
+
+/**
+ * gds-calendar-day要素から日付・価格・利用可否を直接抽出
+ * @return {Object} { available: [{date, price}], soldOut: [date] }
+ */
+async function extractCalendarFromDOM(page) {
+  return await page.evaluate(() => {
+    const days = document.querySelectorAll("gds-calendar-day");
+    const available = [];
+    const soldOut = [];
+
+    for (const day of days) {
+      // 日付: data-date属性 (MM-DD-YYYY形式)
+      const dateAttr = day.getAttribute("data-date");
+      if (!dateAttr) continue;
+
+      const parts = dateAttr.split("-");
+      if (parts.length !== 3) continue;
+      const isoDate = parts[2] + "-" + parts[0] + "-" + parts[1]; // YYYY-MM-DD
+
+      // 利用可否: data-disabled属性
+      const disabled = day.getAttribute("data-disabled") === "true";
+
+      if (disabled) {
+        soldOut.push(isoDate);
+        continue;
+      }
+
+      // 価格抽出: aria-labelの末尾 ("...日曜日 - 25800" 形式)
+      let price = null;
+      const btn = day.querySelector("button");
+      if (btn) {
+        const ariaLabel = btn.getAttribute("aria-label") || "";
+        const match = ariaLabel.match(/- (\d+)$/);
+        if (match) price = parseInt(match[1], 10);
+      }
+
+      // フォールバック: 2番目のgds-eyebrow要素のテキスト
+      if (!price) {
+        const eyebrows = day.querySelectorAll("gds-eyebrow");
+        if (eyebrows.length >= 2) {
+          const priceText = (eyebrows[1].textContent || "").trim();
+          const num = parseInt(priceText.replace(/,/g, ""), 10);
+          if (num >= 5000) price = num;
+        }
+      }
+
+      // 価格範囲チェック (5,000〜100,000円)
+      if (price && price >= 5000 && price <= 100000) {
+        available.push({ date: isoDate, price: price });
+      }
+    }
+
+    return { available, soldOut };
+  });
+}
+
+// === GAS API通信 ===
+
+/**
+ * GAS APIに販売中の価格データを送信（DOM抽出データ）
+ */
+async function postPricesDirectly(gasUrl, apiKey, passId, prices) {
+  const body = JSON.stringify({
+    action: "updatePricesDirectly",
+    apiKey: apiKey,
+    data: {
+      passId: passId,
+      prices: prices,
+    },
+  });
+
+  const response = await fetch(gasUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body,
+    redirect: "follow",
+  });
+
+  if (!response.ok) {
+    throw new Error(`GAS APIエラー: ${response.status} ${response.statusText}`);
+  }
+
+  return await response.json();
+}
+
+/**
+ * GAS APIに売り切れ日の価格削除を依頼
+ */
+async function postDeleteSoldOutPrices(gasUrl, apiKey, passId, soldOutDates) {
+  const body = JSON.stringify({
+    action: "deletePricesForDates",
+    apiKey: apiKey,
+    data: {
+      passId: passId,
+      dates: soldOutDates,
+    },
+  });
+
+  const response = await fetch(gasUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body,
+    redirect: "follow",
+  });
+
+  if (!response.ok) {
+    throw new Error(`GAS APIエラー（削除）: ${response.status} ${response.statusText}`);
+  }
+
+  return await response.json();
+}
+
+// === ヘルパー ===
 
 /**
  * 枚数セレクタの「+」ボタンをクリック（カレンダー有効化のため）
@@ -322,34 +428,6 @@ async function handleQueueIt(page) {
   }
 
   throw new Error("Queue-it タイムアウト（120秒）");
-}
-
-/**
- * GAS Web App にスクリーンショットをPOST → Gemini Vision で価格読み取り
- */
-async function postScreenshotToGas(gasUrl, apiKey, passId, base64) {
-  const body = JSON.stringify({
-    action: "updatePricesFromScreenshot",
-    apiKey: apiKey,
-    data: {
-      passId: passId,
-      base64: base64,
-      mimeType: "image/jpeg",
-    },
-  });
-
-  const response = await fetch(gasUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: body,
-    redirect: "follow",
-  });
-
-  if (!response.ok) {
-    throw new Error(`GAS APIエラー: ${response.status} ${response.statusText}`);
-  }
-
-  return await response.json();
 }
 
 function sleep(ms) {
