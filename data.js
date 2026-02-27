@@ -1,3 +1,19 @@
+// === アトラクション身長制限（付き添いあり / 単独）===
+var ATTRACTION_COMPANION_HEIGHTS = {
+  "ドンキーコングのクレイジー・トロッコ": { companion: 107, solo: 122 },
+  "マリオカート〜クッパの挑戦状〜": { companion: 107, solo: 122 },
+  "ヨッシー・アドベンチャー": { companion: 86, solo: 122 },
+  "ハリー・ポッター・アンド・ザ・フォービドゥン・ジャーニー": { companion: 122, solo: 122 },
+  "フライト・オブ・ザ・ヒッポグリフ": { companion: 92, solo: 122 },
+  "ザ・フライング・ダイナソー": { companion: 132, solo: 132 },
+  "ハリウッド・ドリーム〜バックドロップ〜": { companion: 132, solo: 132 },
+  "ハリウッド・ドリーム・ザ・ライド": { companion: 132, solo: 132 },
+  "スペース・ファンタジー・ザ・ライド": { companion: 102, solo: 122 },
+  "ミニオン・ハチャメチャ・ライド": { companion: 102, solo: 122 },
+  "ジュラシック・パーク・ザ・ライド": { companion: 107, solo: 122 },
+  "ジョーズ": { companion: 0, solo: 0 }
+};
+
 // === アトラクションタグ定義（API取得後に上書きされる） ===
 var ATTRACTION_TAGS = {};
 
@@ -89,7 +105,7 @@ var FALLBACK_PASSES = [
     color: "#4A90D9",
     colorBg: "#EBF3FB",
     borderColor: "#4A90D9",
-    minHeight: 107,
+    minHeight: 122,
     areaEntry: ["nintendo", "harrypotter"],
     attractions: {
       fixed: [
@@ -172,7 +188,7 @@ var FALLBACK_PASSES = [
     color: "#27AE60",
     colorBg: "#E8F8EF",
     borderColor: "#27AE60",
-    minHeight: 107,
+    minHeight: 122,
     areaEntry: ["nintendo"],
     attractions: {
       fixed: [
@@ -244,7 +260,7 @@ var FALLBACK_PASSES = [
     color: "#27AE60",
     colorBg: "#E8F8EF",
     borderColor: "#27AE60",
-    minHeight: 107,
+    minHeight: 122,
     areaEntry: ["nintendo"],
     attractions: {
       fixed: [
@@ -497,7 +513,7 @@ var FALLBACK_PASSES = [
     color: "#27AE60",
     colorBg: "#E8F8EF",
     borderColor: "#27AE60",
-    minHeight: 107,
+    minHeight: 122,
     areaEntry: ["nintendo"],
     attractions: {
       fixed: [
@@ -611,7 +627,7 @@ var FALLBACK_PASSES = [
     color: "#27AE60",
     colorBg: "#E8F8EF",
     borderColor: "#27AE60",
-    minHeight: 107,
+    minHeight: 122,
     areaEntry: ["nintendo"],
     attractions: {
       fixed: [

@@ -1560,13 +1560,13 @@ body {
   color: #D35400;
   background: #FEF5E7;
   border-left: 3px solid #E67E22;
-  padding: 6px 10px;
+  padding: 8px 10px;
   margin: 8px 0;
   border-radius: 4px;
-  line-height: 1.5;
+  line-height: 1.7;
 }
 .sub-result-card .companion-note {
   font-size: 12px;
-  padding: 4px 8px;
+  padding: 6px 8px;
   margin: 6px 0;
 }

@@ -757,9 +757,22 @@
     html += buildSalesBadge(p, hasDailyPrice, isPredicted);
     html += '<p class="result-card-desc">' + p.description + '</p>';
 
-    // マリオカート付き添い注記（107-121cmの場合）
-    if (p.tags.indexOf("mario") !== -1 && selectedHeight >= 107 && selectedHeight < 122) {
-      html += '<p class="companion-note">※マリオカートは付き添い者が必要です</p>';
+    // 付き添い注記（身長に応じて動的生成）
+    var companionNotes = [];
+    var allFixed = p.attractions ? (p.attractions.fixed || []) : [];
+    for (var ci = 0; ci < allFixed.length; ci++) {
+      var aName = allFixed[ci];
+      var hInfo = ATTRACTION_COMPANION_HEIGHTS[aName];
+      if (!hInfo) continue;
+      var shortAName = aName.replace(/〜.*?〜/g, "").replace(/・ザ・リアル.*$/, "").replace(/・ザ・ライド$/, "");
+      if (selectedHeight < hInfo.companion) {
+        companionNotes.push(shortAName + "は身長" + hInfo.companion + "cm以上必要");
+      } else if (selectedHeight < hInfo.solo && hInfo.companion < hInfo.solo) {
+        companionNotes.push(shortAName + "は付き添いが必要");
+      }
+    }
+    if (companionNotes.length > 0) {
+      html += '<div class="companion-note">※' + companionNotes.join('<br>※') + '</div>';
     }
 
     if (isMain) {
