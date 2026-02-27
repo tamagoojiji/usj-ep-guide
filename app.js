@@ -365,9 +365,7 @@
 
   function hasAnyPassOnDate(dateStr) {
     return PASSES.some(function (p) {
-      if (p.pricing[dateStr] !== undefined) return true;
-      return p.lawson && p.lawson.performanceFrom && p.lawson.performanceTo
-        && dateStr >= p.lawson.performanceFrom && dateStr <= p.lawson.performanceTo;
+      return p.pricing[dateStr] !== undefined;
     });
   }
 
@@ -923,7 +921,7 @@
   // === 期限切れチェック ===
   function isExpired() {
     var now = new Date();
-    var expiry = new Date(2026, 5, 1);
+    var expiry = new Date(2026, 3, 16);
     return now >= expiry;
   }
 

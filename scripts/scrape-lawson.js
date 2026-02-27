@@ -89,23 +89,10 @@ async function main() {
       process.exit(0);
     }
 
-    // Step 2: 公演日程を集約（一覧ページから取得済み）
-    console.log("Step 2: 公演日程を集約...\n");
-    const performanceDates = {};
-    for (const pass of passList) {
-      if (pass.performanceFrom && pass.performanceTo) {
-        performanceDates[pass.lCode] = { from: pass.performanceFrom, to: pass.performanceTo };
-        console.log(`  ${pass.lCode}: ${pass.performanceFrom} 〜 ${pass.performanceTo}`);
-      } else {
-        console.log(`  ${pass.lCode}: 公演日程なし`);
-      }
-    }
-
-    // Step 3: passIdマッピング + データ整形
-    console.log("\nStep 3: passIdマッピング...\n");
+    // Step 2: passIdマッピング + データ整形
+    console.log("Step 2: passIdマッピング...\n");
     const dataList = passList.map((pass) => {
       const passId = matchPassId(pass.passName);
-      const dates = performanceDates[pass.lCode] || {};
       console.log(`  ${pass.passName} (${pass.lCode}) → ${passId || "(新規)"}`);
       return {
         passId: passId || "",
@@ -114,14 +101,14 @@ async function main() {
         salesStatus: "販売中", // EP一覧ページに掲載 = 販売中
         salesFrom: "",
         salesTo: "",
-        performanceFrom: dates.from || "",
-        performanceTo: dates.to || "",
+        performanceFrom: "",
+        performanceTo: "",
         minPrice: pass.minPrice || null,
       };
     });
 
-    // Step 4: GASへPOST送信
-    console.log(`\nStep 4: GASへデータ送信 (${dataList.length}件)...`);
+    // Step 3: GASへPOST送信
+    console.log(`\nStep 3: GASへデータ送信 (${dataList.length}件)...`);
     const gasResult = await postToGas(GAS_URL, API_KEY, dataList);
     console.log(`  GAS応答: ${JSON.stringify(gasResult)}`);
 
@@ -225,37 +212,7 @@ async function scrapeEpListPage(browser) {
           parent = parent.parentElement;
         }
 
-        // 公演日程を探す（リンク周辺のテキストから）
-        let performanceFrom = "";
-        let performanceTo = "";
-        let searchParent = link.parentElement;
-        for (let i = 0; i < 5 && searchParent; i++) {
-          const parentText = searchParent.textContent || "";
-          // "YYYY/MM/DD(曜) ～ YYYY/MM/DD(曜)" パターン
-          const dateRange = parentText.match(
-            /(\d{4})\/(\d{1,2})\/(\d{1,2})\s*\([^)]*\)\s*[～〜~ー-]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/
-          );
-          if (dateRange) {
-            performanceFrom = dateRange[1] + "-" + dateRange[2].padStart(2, "0") + "-" + dateRange[3].padStart(2, "0");
-            performanceTo = dateRange[4] + "-" + dateRange[5].padStart(2, "0") + "-" + dateRange[6].padStart(2, "0");
-            break;
-          }
-          // "YYYY年MM月DD日～YYYY年MM月DD日" パターン
-          const jpRange = parentText.match(
-            /(\d{4})年(\d{1,2})月(\d{1,2})日\s*[～〜~ー-]\s*(\d{4})年(\d{1,2})月(\d{1,2})日/
-          );
-          if (jpRange) {
-            performanceFrom = jpRange[1] + "-" + jpRange[2].padStart(2, "0") + "-" + jpRange[3].padStart(2, "0");
-            performanceTo = jpRange[4] + "-" + jpRange[5].padStart(2, "0") + "-" + jpRange[6].padStart(2, "0");
-            break;
-          }
-          searchParent = searchParent.parentElement;
-        }
-
-        // 実際のリンクURLを保存
-        const fullHref = href.startsWith("http") ? href : (href.startsWith("/") ? "https://l-tike.com" + href : "");
-
-        // 各Lコードを個別に登録
+        // 各Lコードを個別に登録（公演日程はパスごとに取得できないため空）
         lCodes.forEach((lCode) => {
           if (seen.has(lCode)) return;
           seen.add(lCode);
@@ -263,9 +220,6 @@ async function scrapeEpListPage(browser) {
             passName: passName || `エクスプレス・パス（Lコード:${lCode}）`,
             lCode,
             minPrice,
-            performanceFrom,
-            performanceTo,
-            href: fullHref,
           });
         });
       });

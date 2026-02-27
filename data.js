@@ -664,11 +664,9 @@ var FALLBACK_PASSES = [
 
 // === レコメンドアルゴリズム ===
 function calculateResult(date, height, attractionTags, budget) {
-  // Step 1: 日付フィルタ（価格データ or ローチケ公演日程内）
+  // Step 1: 日付フィルタ（価格データがある日付のみ）
   var available = PASSES.filter(function (p) {
-    if (p.pricing[date] !== undefined) return true;
-    return p.lawson && p.lawson.performanceFrom && p.lawson.performanceTo
-      && date >= p.lawson.performanceFrom && date <= p.lawson.performanceTo;
+    return p.pricing[date] !== undefined;
   });
 
   if (available.length === 0) {
