@@ -10,7 +10,7 @@
  *
  * 処理フロー:
  * 1. ローチケ EP一覧ページをスクレイプ（パス名、Lコード、最低価格）
- * 2. 各Lコードの検索ページから公演日程を取得（ブラウザ内fetch）
+ * 2. ローカル取得済みの公演日程を付加
  * 3. passIdマッピング（キーワードマッチ）
  * 4. GASへPOST送信
  */
@@ -20,11 +20,25 @@ const puppeteer = require("puppeteer");
 // === 設定 ===
 const EP_LIST_URL = "https://l-tike.com/leisure/usj/express_pass/";
 
+// === Lコード別公演日程（ローカルPuppeteerで取得済み 2026-02-27） ===
+// ローチケ検索ページ（headless:false）から抽出
+const PERFORMANCE_DATES = {
+  "50028": { from: "2026-02-27", to: "2026-03-31" },
+  "50015": { from: "2026-04-01", to: "2026-04-30" },
+  "50029": { from: "2026-02-27", to: "2026-03-31" },
+  "50030": { from: "2026-02-27", to: "2026-03-31" },
+  "50031": { from: "2026-02-27", to: "2026-03-20" },
+  "50027": { from: "2026-03-21", to: "2026-03-31" },
+  "50016": { from: "2026-04-01", to: "2026-04-30" },
+  "50018": { from: "2026-04-01", to: "2026-04-30" },
+  "50017": { from: "2026-04-01", to: "2026-04-30" },
+};
+
 // === passId マッピング ===
-// パス名キーワード → 既存passIdの対応表
 const PASS_ID_MAPPING = [
   { keywords: ["プレミアム"], passId: "premium" },
   { keywords: ["バラエティ・スタンダード"], passId: "ep7_trolley_selection" },
+  { keywords: ["トロッコ", "セレクション"], passId: "ep7_trolley_selection" },
   { keywords: ["XRライド", "セレクション"], passId: "ep7_trolley_selection" },
   { keywords: ["ミニオン", "ハリウッド・ドリーム"], passId: "ep4_minion_hollywood" },
   { keywords: ["レース", "トロッコ"], passId: "ep4_race_trolley" },
@@ -45,14 +59,10 @@ const PASS_ID_MAPPING = [
   { keywords: ["ファン・バラエティ"], passId: "ep4_fun_variety" },
 ];
 
-/**
- * パス名からpassIdを推定
- */
 function matchPassId(passName) {
   const name = passName || "";
   for (const mapping of PASS_ID_MAPPING) {
-    const allMatch = mapping.keywords.every((kw) => name.includes(kw));
-    if (allMatch) return mapping.passId;
+    if (mapping.keywords.every((kw) => name.includes(kw))) return mapping.passId;
   }
   return null;
 }
@@ -71,78 +81,28 @@ async function main() {
 
   const browser = await puppeteer.launch({
     headless: "new",
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-http2",
-    ],
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-http2"],
   });
 
   try {
     // Step 1: EP一覧ページからパス情報を取得
     console.log("Step 1: EP一覧ページをスクレイプ...");
-    const { passes: passList, page: listPage } = await scrapeEpListPage(browser);
+    const passList = await scrapeEpListPage(browser);
     console.log(`  ${passList.length}件のパスを検出\n`);
 
     if (passList.length === 0) {
       console.log("パスが見つかりませんでした。");
-      await listPage.close();
       process.exit(0);
     }
 
-    // Step 2: 一覧ページの構造を調査
-    console.log("Step 2: 一覧ページのパスセクション構造を調査...\n");
-    passList.forEach((pass) => {
-      console.log(`--- ${pass.passName} (${pass.lCode}) ---`);
-      console.log(`  価格: ${pass.minPrice || "なし"}`);
-      console.log(`  linkText: ${pass.linkText}`);
-      console.log(`  linkHref: ${pass.linkHref}`);
-      if (pass.nearText) {
-        const lines = pass.nearText.split("\n").filter((l) => l.trim()).slice(0, 20);
-        lines.forEach((line) => console.log(`  | ${line.trim()}`));
-      }
-      console.log();
-    });
-
-    // ページ全体の日付パターンを調査
-    console.log("--- ページ全体の日付パターン調査 ---");
-    const pageDateInfo = await listPage.evaluate(() => {
-      const text = document.body ? document.body.innerText : "";
-      // 日付パターンを全て抽出
-      const dateMatches = text.match(/\d{4}[\/年]\d{1,2}[\/月]\d{1,2}[日]?/g) || [];
-      // "公演" "期間" "販売" 周辺のテキスト
-      const contextMatches = [];
-      const keywords = ["公演", "期間", "販売", "入場日", "利用日"];
-      const lines = text.split("\n");
-      for (const line of lines) {
-        for (const kw of keywords) {
-          if (line.includes(kw)) {
-            contextMatches.push(line.trim().substring(0, 200));
-            break;
-          }
-        }
-      }
-      return { dateMatches: dateMatches.slice(0, 30), contextMatches: contextMatches.slice(0, 20) };
-    });
-    console.log(`  日付パターン: ${JSON.stringify(pageDateInfo.dateMatches)}`);
-    console.log(`  キーワード含む行:`);
-    pageDateInfo.contextMatches.forEach((line) => console.log(`  | ${line}`));
-    console.log();
-
-    // Step 3: 公演日程取得（一覧ページ調査のみ、検索ページアクセスはスキップ）
-    await listPage.close();
-    const dateMap = {};
-    console.log("  ※検索ページアクセスはスキップ（タイムアウト回避）\n");
-
-    // Step 4: passIdマッピング + データ整形
-    console.log("Step 4: passIdマッピング...\n");
+    // Step 2: passIdマッピング + 公演日程付加 + データ整形
+    console.log("Step 2: passIdマッピング + 公演日程付加...\n");
     const dataList = passList.map((pass) => {
       const passId = matchPassId(pass.passName);
-      const dates = dateMap[pass.lCode] || {};
+      const dates = PERFORMANCE_DATES[pass.lCode] || {};
       console.log(
         `  ${pass.passName} (${pass.lCode}) → ${passId || "(新規)"}` +
-        (dates.performanceFrom ? ` [${dates.performanceFrom}～${dates.performanceTo}]` : " [日程未取得]")
+        (dates.from ? ` [${dates.from}～${dates.to}]` : " [日程なし]")
       );
       return {
         passId: passId || "",
@@ -151,14 +111,14 @@ async function main() {
         salesStatus: "販売中",
         salesFrom: "",
         salesTo: "",
-        performanceFrom: dates.performanceFrom || "",
-        performanceTo: dates.performanceTo || "",
+        performanceFrom: dates.from || "",
+        performanceTo: dates.to || "",
         minPrice: pass.minPrice || null,
       };
     });
 
-    // Step 5: GASへPOST送信
-    console.log(`\nStep 5: GASへデータ送信 (${dataList.length}件)...`);
+    // Step 3: GASへPOST送信
+    console.log(`\nStep 3: GASへデータ送信 (${dataList.length}件)...`);
     const gasResult = await postToGas(GAS_URL, API_KEY, dataList);
     console.log(`  GAS応答: ${JSON.stringify(gasResult)}`);
 
@@ -167,7 +127,7 @@ async function main() {
     const mapped = dataList.filter((d) => d.passId).length;
     const unmapped = dataList.filter((d) => !d.passId).length;
     const withDates = dataList.filter((d) => d.performanceFrom).length;
-    console.log(`合計: ${dataList.length}件 (既存パス: ${mapped}, 予告パス: ${unmapped}, 日程取得: ${withDates})`);
+    console.log(`合計: ${dataList.length}件 (既存パス: ${mapped}, 予告パス: ${unmapped}, 日程付き: ${withDates})`);
     dataList.forEach((d) => {
       const price = d.minPrice ? `¥${d.minPrice.toLocaleString()}~` : "価格未定";
       const id = d.passId || "(新規)";
@@ -181,271 +141,88 @@ async function main() {
 }
 
 /**
- * EP一覧ページをスクレイプ（ページは閉じずに返す — 後続のfetchで使用）
- * @return {{ passes: Array<{passName, lCode, minPrice}>, page: Page }}
+ * EP一覧ページをスクレイプ
  */
 async function scrapeEpListPage(browser) {
-  const page = await browser.newPage();
-  await page.setUserAgent(
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-  );
-  await page.goto(EP_LIST_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
-  await sleep(8000);
-
-  const passes = await page.evaluate(() => {
-    const results = [];
-    const seen = new Set();
-
-    // lcd= を含むリンクを全て取得
-    const links = document.querySelectorAll('a[href*="lcd="]');
-
-    links.forEach((link) => {
-      const href = link.getAttribute("href") || "";
-      const lcdParam = href.match(/lcd=([^&]+)/i);
-      if (!lcdParam) return;
-
-      // カンマ区切りのLコードを分割
-      const lCodes = decodeURIComponent(lcdParam[1]).split(",").map((s) => s.trim()).filter((s) => /^\d+$/.test(s));
-      if (lCodes.length === 0) return;
-
-      // パス名: リンクの前にあるテキストから「パス X ～XXX～」パターンを取得
-      let passName = "";
-
-      // 方法1: リンクの直前の兄弟要素からパス名を探す
-      let prevEl = link.previousElementSibling;
-      for (let i = 0; i < 10 && prevEl; i++) {
-        const text = prevEl.textContent || "";
-        const nameMatch = text.match(/(ユニバーサル・エクスプレス・パス\s*\d+\s*～[^～]+～)/);
-        if (nameMatch) {
-          passName = nameMatch[1].trim().replace(/\s+/g, " ");
-          break;
-        }
-        prevEl = prevEl.previousElementSibling;
-      }
-
-      // 方法2: 親要素のテキストから探す（より狭い範囲）
-      if (!passName) {
-        let parent = link.parentElement;
-        for (let i = 0; i < 3 && parent; i++) {
-          const text = parent.textContent || "";
-          const nameMatch = text.match(/(ユニバーサル・エクスプレス・パス\s*\d+\s*～[^～]+～)/);
-          if (nameMatch) {
-            passName = nameMatch[1].trim().replace(/\s+/g, " ");
-            break;
-          }
-          parent = parent.parentElement;
-        }
-      }
-
-      // 方法3: リンクテキストからLコード部分を除去
-      if (!passName) {
-        const linkText = link.textContent.trim();
-        if (linkText.includes("エクスプレス")) {
-          passName = linkText.replace(/Lコード[：:][^チ]+チケット購入ページへ進む/g, "").trim();
-        }
-      }
-
-      // 価格を取得
-      let minPrice = null;
-      let parent = link.parentElement;
-      for (let i = 0; i < 3 && parent; i++) {
-        const priceMatches = parent.textContent.match(/([0-9,]+)\s*円/g);
-        if (priceMatches) {
-          const prices = priceMatches
-            .map((p) => parseInt(p.replace(/[,円\s]/g, ""), 10))
-            .filter((p) => p >= 5000 && p <= 100000);
-          if (prices.length > 0) {
-            minPrice = Math.min(...prices);
-            break;
-          }
-        }
-        parent = parent.parentElement;
-      }
-
-      // リンク周辺テキスト（近い範囲）とHTMLタグ構造を取得
-      const linkText = link.textContent.trim().substring(0, 200);
-      const linkHref = href.substring(0, 200);
-      let nearText = "";
-      // 1-2階層上の親テキスト
-      let p1 = link.parentElement;
-      if (p1) {
-        nearText = p1.innerText.substring(0, 300);
-        let p2 = p1.parentElement;
-        if (p2) {
-          nearText = p2.innerText.substring(0, 500);
-        }
-      }
-
-      // 各Lコードを個別に登録
-      lCodes.forEach((lCode) => {
-        if (seen.has(lCode)) return;
-        seen.add(lCode);
-        results.push({
-          passName: passName || `エクスプレス・パス（Lコード:${lCode}）`,
-          lCode,
-          minPrice,
-          linkText,
-          linkHref,
-          nearText,
-        });
-      });
-    });
-
-    return results;
-  });
-
-  // ページを閉じずに返す（後続のfetchで使用するため）
-  return { passes, page };
-}
-
-/**
- * 各Lコードの検索ページから公演日程を取得
- * ブラウザコンテキスト内のfetch()を使用し、Cookie/セッションを継承する
- * @param {Page} page - 一覧ページがロード済みのPuppeteerページ
- * @param {Array} passList - scrapeEpListPage の結果
- * @return {Object} lCode → { performanceFrom, performanceTo }
- */
-async function scrapePerformanceDates(page, passList) {
-  const dateMap = {};
-  const uniqueLCodes = [...new Set(passList.map((p) => p.lCode))];
-
-  console.log(`  ${uniqueLCodes.length}件のLコードを処理...\n`);
-
-  for (const lCode of uniqueLCodes) {
-    const searchUrl = `https://l-tike.com/search/?lcd=${lCode}`;
-    console.log(`  [${lCode}] fetch: ${searchUrl}`);
-
-    try {
-      // ブラウザコンテキスト内でfetchを実行（Cookie/セッション継承）
-      const result = await page.evaluate(async (url) => {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 20000);
-
-          const res = await fetch(url, {
-            signal: controller.signal,
-            credentials: "include",
-          });
-          clearTimeout(timeoutId);
-
-          const html = await res.text();
-
-          // 公演日程の日付パターンを探す
-          // パターン1: "2026/3/4(水)～2026/3/31(月)" 形式
-          // パターン2: "2026年3月4日～2026年3月31日" 形式
-          // パターン3: "2026/03/04～2026/03/31" 形式
-          const datePatterns = [
-            /(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})[日]?\s*(?:[（(][^）)]+[）)])?\s*～\s*(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})/,
-            /公演[期日]間?\s*[：:]*\s*(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})[\s\S]*?～[\s\S]*?(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})/,
-          ];
-
-          let from = null;
-          let to = null;
-          for (const pattern of datePatterns) {
-            const match = html.match(pattern);
-            if (match) {
-              from = `${match[1]}-${String(match[2]).padStart(2, "0")}-${String(match[3]).padStart(2, "0")}`;
-              to = `${match[4]}-${String(match[5]).padStart(2, "0")}-${String(match[6]).padStart(2, "0")}`;
-              break;
-            }
-          }
-
-          // デバッグ: HTMLの一部を返す（日付が見つからない場合）
-          let debugSnippet = "";
-          if (!from) {
-            // 「公演」「期間」「日程」周辺のテキストを探す
-            const contextMatch = html.match(/.{0,100}(公演|期間|日程|performance).{0,100}/i);
-            debugSnippet = contextMatch ? contextMatch[0].replace(/<[^>]+>/g, " ").substring(0, 200) : "";
-          }
-
-          return { from, to, status: "ok", htmlLength: html.length, debugSnippet };
-        } catch (e) {
-          return {
-            from: null,
-            to: null,
-            status: e.name === "AbortError" ? "timeout" : e.message,
-            htmlLength: 0,
-            debugSnippet: "",
-          };
-        }
-      }, searchUrl);
-
-      if (result.from && result.to) {
-        console.log(`    → OK: ${result.from} ～ ${result.to} (${result.htmlLength}bytes)`);
-        dateMap[lCode] = { performanceFrom: result.from, performanceTo: result.to };
-      } else {
-        console.log(`    → ${result.status} (${result.htmlLength}bytes)`);
-        if (result.debugSnippet) {
-          console.log(`    debug: ${result.debugSnippet}`);
-        }
-      }
-    } catch (e) {
-      console.log(`    → エラー: ${e.message}`);
-    }
-
-    // 各リクエスト間に3秒待機
-    await sleep(3000);
-  }
-
-  // フォールバック: fetchで取得できなかったLコードに対してPuppeteerページ遷移を試行
-  const missingLCodes = uniqueLCodes.filter((lc) => !dateMap[lc]);
-  if (missingLCodes.length > 0) {
-    console.log(`\n  フォールバック: ${missingLCodes.length}件をPuppeteerで再試行...`);
-    for (const lCode of missingLCodes) {
-      try {
-        const dates = await scrapeSearchPageWithPuppeteer(page.browser(), lCode);
-        if (dates) {
-          console.log(`    [${lCode}] → OK: ${dates.performanceFrom} ～ ${dates.performanceTo}`);
-          dateMap[lCode] = dates;
-        } else {
-          console.log(`    [${lCode}] → 日程取得失敗`);
-        }
-      } catch (e) {
-        console.log(`    [${lCode}] → エラー: ${e.message}`);
-      }
-      await sleep(3000);
-    }
-  }
-
-  return dateMap;
-}
-
-/**
- * Puppeteerで検索ページに直接遷移して日程を取得（フォールバック用）
- */
-async function scrapeSearchPageWithPuppeteer(browser, lCode) {
   const page = await browser.newPage();
   try {
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     );
+    await page.goto(EP_LIST_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await sleep(8000);
 
-    await page.goto(`https://l-tike.com/search/?lcd=${lCode}`, {
-      waitUntil: "domcontentloaded",
-      timeout: 25000,
+    return await page.evaluate(() => {
+      const results = [];
+      const seen = new Set();
+      const links = document.querySelectorAll('a[href*="lcd="]');
+
+      links.forEach((link) => {
+        const href = link.getAttribute("href") || "";
+        const lcdParam = href.match(/lcd=([^&]+)/i);
+        if (!lcdParam) return;
+
+        const lCodes = decodeURIComponent(lcdParam[1]).split(",").map((s) => s.trim()).filter((s) => /^\d+$/.test(s));
+        if (lCodes.length === 0) return;
+
+        let passName = "";
+
+        // リンクの直前の兄弟要素からパス名を探す
+        let prevEl = link.previousElementSibling;
+        for (let i = 0; i < 10 && prevEl; i++) {
+          const text = prevEl.textContent || "";
+          const nameMatch = text.match(/(ユニバーサル・エクスプレス・パス\s*\d+\s*～[^～]+～)/);
+          if (nameMatch) {
+            passName = nameMatch[1].trim().replace(/\s+/g, " ");
+            break;
+          }
+          prevEl = prevEl.previousElementSibling;
+        }
+
+        // 親要素のテキストから探す
+        if (!passName) {
+          let parent = link.parentElement;
+          for (let i = 0; i < 3 && parent; i++) {
+            const text = parent.textContent || "";
+            const nameMatch = text.match(/(ユニバーサル・エクスプレス・パス\s*\d+\s*～[^～]+～)/);
+            if (nameMatch) {
+              passName = nameMatch[1].trim().replace(/\s+/g, " ");
+              break;
+            }
+            parent = parent.parentElement;
+          }
+        }
+
+        // 価格を取得
+        let minPrice = null;
+        let parent = link.parentElement;
+        for (let i = 0; i < 3 && parent; i++) {
+          const priceMatches = parent.textContent.match(/([0-9,]+)\s*円/g);
+          if (priceMatches) {
+            const prices = priceMatches
+              .map((p) => parseInt(p.replace(/[,円\s]/g, ""), 10))
+              .filter((p) => p >= 5000 && p <= 100000);
+            if (prices.length > 0) {
+              minPrice = Math.min(...prices);
+              break;
+            }
+          }
+          parent = parent.parentElement;
+        }
+
+        lCodes.forEach((lCode) => {
+          if (seen.has(lCode)) return;
+          seen.add(lCode);
+          results.push({
+            passName: passName || `エクスプレス・パス（Lコード:${lCode}）`,
+            lCode,
+            minPrice,
+          });
+        });
+      });
+
+      return results;
     });
-    await sleep(5000);
-
-    const result = await page.evaluate(() => {
-      const text = document.body ? document.body.innerText : "";
-      // 日付パターンを探す
-      const match = text.match(/(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})[日]?\s*(?:[（(][^）)]+[）)])?\s*～\s*(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})/);
-      if (match) {
-        return {
-          from: `${match[1]}-${String(match[2]).padStart(2, "0")}-${String(match[3]).padStart(2, "0")}`,
-          to: `${match[4]}-${String(match[5]).padStart(2, "0")}-${String(match[6]).padStart(2, "0")}`,
-        };
-      }
-      return null;
-    });
-
-    if (result) {
-      return { performanceFrom: result.from, performanceTo: result.to };
-    }
-    return null;
-  } catch (e) {
-    console.log(`    [${lCode}] Puppeteer: ${e.message.substring(0, 80)}`);
-    return null;
   } finally {
     await page.close();
   }
@@ -453,9 +230,6 @@ async function scrapeSearchPageWithPuppeteer(browser, lCode) {
 
 /**
  * GAS Web App にローチケデータをPOST
- * GASは302リダイレクトを返す。
- * 1. POST(redirect:manual) → doPost()実行 → 302レスポンス
- * 2. GET(redirect:follow) → リダイレクト先からdoPost()の結果を取得
  */
 async function postToGas(gasUrl, apiKey, items) {
   const body = JSON.stringify({
@@ -464,7 +238,6 @@ async function postToGas(gasUrl, apiKey, items) {
     data: items,
   });
 
-  // Step 1: POSTでデータ送信（doPost実行）→ 302リダイレクト取得
   const response = await fetch(gasUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -472,41 +245,23 @@ async function postToGas(gasUrl, apiKey, items) {
     redirect: "manual",
   });
 
-  // Step 2: リダイレクト先をGETで取得（doPostの実行結果）
   console.log(`  POST応答ステータス: ${response.status}`);
   if (response.status === 302 || response.status === 301) {
     const redirectUrl = response.headers.get("location");
-    console.log(`  リダイレクト先: ${redirectUrl ? redirectUrl.substring(0, 100) : "なし"}`);
-    if (!redirectUrl) {
-      throw new Error("GAS APIリダイレクト先URLが取得できません");
-    }
-    const response2 = await fetch(redirectUrl, {
-      method: "GET",
-      redirect: "follow",
-    });
+    if (!redirectUrl) throw new Error("GAS APIリダイレクト先URLが取得できません");
+    const response2 = await fetch(redirectUrl, { method: "GET", redirect: "follow" });
     const text = await response2.text();
-    try {
-      return JSON.parse(text);
-    } catch {
-      console.log(`  GAS応答(raw): ${text.substring(0, 200)}`);
-      return { status: response2.ok ? "ok" : "error", rawResponse: text.substring(0, 200) };
-    }
+    try { return JSON.parse(text); } catch { return { status: response2.ok ? "ok" : "error", rawResponse: text.substring(0, 200) }; }
   }
 
   const text = await response.text();
-  try {
-    return JSON.parse(text);
-  } catch {
-    console.log(`  GAS応答(raw): ${text.substring(0, 200)}`);
-    return { status: response.ok ? "ok" : "error", rawResponse: text.substring(0, 200) };
-  }
+  try { return JSON.parse(text); } catch { return { status: response.ok ? "ok" : "error", rawResponse: text.substring(0, 200) }; }
 }
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// 実行
 main().catch((err) => {
   console.error("致命的エラー:", err);
   process.exit(1);
