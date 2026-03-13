@@ -4,6 +4,7 @@
   // === LIFF設定 ===
   var LIFF_ID = "2009123941-LX82tg0R";
   var GAS_URL = "https://script.google.com/macros/s/AKfycbzeFQtwr0M_UsMDjXg-lv7KtUkVossqeuqeJzjfYorMmYhsk4ccyhIYNif0F0kLgKxF/exec";
+  var USER_MASTER_URL = "https://script.google.com/macros/s/AKfycbylb9DgElCxvX8P42y_Vu6EBDlRpxaeaOUF8Jw-kToTxXxpJ-8TKpAnLumn0WBahePI/exec";
 
   // === ユーザー情報 ===
   var lineUid = null;
@@ -57,9 +58,21 @@
         return;
       }
 
+      // localStorage旧キー移行（ep_ → tamago_）
+      var oldReg = localStorage.getItem("ep_registered_" + lineUid);
+      var oldUser = localStorage.getItem("ep_user_" + lineUid);
+      if (oldReg && !localStorage.getItem("tamago_registered_" + lineUid)) {
+        localStorage.setItem("tamago_registered_" + lineUid, oldReg);
+      }
+      if (oldUser && !localStorage.getItem("tamago_user_" + lineUid)) {
+        localStorage.setItem("tamago_user_" + lineUid, oldUser);
+      }
+
       // リセットモード（?reset=true で登録画面に戻す）
       var params = new URLSearchParams(window.location.search);
       if (params.get("reset") === "true") {
+        localStorage.removeItem("tamago_user_" + lineUid);
+        localStorage.removeItem("tamago_registered_" + lineUid);
         localStorage.removeItem("ep_user_" + lineUid);
         localStorage.removeItem("ep_registered_" + lineUid);
         userRegistered = false;
@@ -80,22 +93,20 @@
   // ============================================================
   function checkUserRegistration() {
     // キャッシュから即座に判定（GAS呼び出しを待たない）
-    var cachedRegistered = localStorage.getItem("ep_registered_" + lineUid);
-    var localUser = localStorage.getItem("ep_user_" + lineUid);
+    var cachedRegistered = localStorage.getItem("tamago_registered_" + lineUid);
+    var localUser = localStorage.getItem("tamago_user_" + lineUid);
 
     if (cachedRegistered === "true" || localUser) {
-      // キャッシュあり → 即座に表紙表示
       userRegistered = true;
       showTopScreen();
 
-      // バックグラウンドでGASと同期（画面はブロックしない）
-      if (GAS_URL) {
-        fetch(GAS_URL + "?action=checkUser&uid=" + encodeURIComponent(lineUid))
+      // バックグラウンドでユーザーマスターと同期
+      if (USER_MASTER_URL) {
+        fetch(USER_MASTER_URL + "?action=checkUser&uid=" + encodeURIComponent(lineUid))
           .then(function (res) { return res.json(); })
           .then(function (data) {
             if (!data.registered) {
-              // GAS側で未登録 → キャッシュクリア（次回は登録画面へ）
-              localStorage.removeItem("ep_registered_" + lineUid);
+              localStorage.removeItem("tamago_registered_" + lineUid);
             }
           })
           .catch(function () { /* バックグラウンドなので無視 */ });
@@ -103,18 +114,18 @@
       return;
     }
 
-    // キャッシュなし → GASに問い合わせ
-    if (!GAS_URL) {
+    // キャッシュなし → ユーザーマスターに問い合わせ
+    if (!USER_MASTER_URL) {
       showRegisterScreen();
       return;
     }
 
-    fetch(GAS_URL + "?action=checkUser&uid=" + encodeURIComponent(lineUid))
+    fetch(USER_MASTER_URL + "?action=checkUser&uid=" + encodeURIComponent(lineUid))
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (data.registered) {
           userRegistered = true;
-          localStorage.setItem("ep_registered_" + lineUid, "true");
+          localStorage.setItem("tamago_registered_" + lineUid, "true");
           showTopScreen();
         } else {
           showRegisterScreen();
@@ -207,18 +218,18 @@
         registeredAt: new Date().toISOString()
       };
 
-      // ローカル保存（GASの有無に関わらず）
-      localStorage.setItem("ep_user_" + lineUid, JSON.stringify(userData));
-      localStorage.setItem("ep_registered_" + lineUid, "true");
+      // ローカル保存（共通キー）
+      localStorage.setItem("tamago_user_" + lineUid, JSON.stringify(userData));
+      localStorage.setItem("tamago_registered_" + lineUid, "true");
       userRegistered = true;
 
-      // GASに送信
-      if (GAS_URL) {
-        fetch(GAS_URL, {
+      // ユーザーマスターGASに送信
+      if (USER_MASTER_URL) {
+        fetch(USER_MASTER_URL, {
           method: "POST",
           body: JSON.stringify({ action: "registerUser", data: userData })
         }).catch(function (err) {
-          console.error("GAS register error:", err);
+          console.error("User master register error:", err);
         });
       }
 
