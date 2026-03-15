@@ -43,7 +43,13 @@
   function initLiff() {
     liff.init({ liffId: LIFF_ID }).then(function () {
       if (!liff.isLoggedIn()) {
-        liff.login();
+        // LINE内ブラウザならログインを促す、外部ブラウザなら登録なしで進む
+        if (liff.isInClient()) {
+          liff.login();
+          return;
+        }
+        // 外部ブラウザ → 登録なしで診断のみ利用可能
+        startWithoutLogin();
         return;
       }
       return liff.getProfile();
@@ -84,8 +90,18 @@
       checkUserRegistration();
     }).catch(function (err) {
       console.error("LIFF init error:", err);
-      showScreen("screen-liff-error");
+      // LIFF初期化失敗 → 登録なしで診断のみ利用可能
+      startWithoutLogin();
     });
+  }
+
+  // LIFF未使用時（外部ブラウザ or LIFF初期化失敗）→ 登録なしで診断に直接進む
+  function startWithoutLogin() {
+    if (isExpired()) {
+      showScreen("screen-expired");
+      return;
+    }
+    showScreen("screen-top");
   }
 
   // ============================================================
@@ -294,15 +310,17 @@
       diagnosedAt: new Date().toISOString()
     };
 
-    // ローカル保存
-    var historyKey = "ep_history_" + lineUid;
-    var history = JSON.parse(localStorage.getItem(historyKey) || "[]");
-    history.unshift(logData);
-    if (history.length > 20) history = history.slice(0, 20);
-    localStorage.setItem(historyKey, JSON.stringify(history));
+    // ローカル保存（lineUidがある場合のみ）
+    if (lineUid) {
+      var historyKey = "ep_history_" + lineUid;
+      var history = JSON.parse(localStorage.getItem(historyKey) || "[]");
+      history.unshift(logData);
+      if (history.length > 20) history = history.slice(0, 20);
+      localStorage.setItem(historyKey, JSON.stringify(history));
+    }
 
-    // GASに送信
-    if (GAS_URL) {
+    // GASに送信（lineUidがある場合のみ）
+    if (GAS_URL && lineUid) {
       fetch(GAS_URL, {
         method: "POST",
         body: JSON.stringify({ action: "saveDiagnosis", data: logData })
