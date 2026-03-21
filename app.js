@@ -1240,16 +1240,6 @@
       renderBudgetChoices();
     });
 
-    // メインサイトにもどる（iframe内の場合のみ表示）
-    if (window.parent !== window) {
-      var mainBtn = document.getElementById("back-to-main-btn");
-      if (mainBtn) {
-        mainBtn.style.display = "block";
-        mainBtn.addEventListener("click", function () {
-          window.parent.postMessage({ type: "back-to-main" }, "*");
-        });
-      }
-    }
 
     // 履歴ボタン
     document.getElementById("history-btn").addEventListener("click", function () {
