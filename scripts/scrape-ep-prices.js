@@ -241,8 +241,40 @@ async function openPageAndExtractDOM(browser, url) {
     // 描画完了を待つ
     await sleep(3000);
 
-    // DOM直接抽出
+    // DOM直接抽出（初回: 当月+翌月）
     const domData = await extractCalendarFromDOM(page);
+    console.log(`初回抽出: 販売中=${domData.available.length} 売切=${domData.soldOut.length}`);
+
+    // 右矢印クリックで次の月へ遷移し、追加データを取得（最大2回）
+    const MAX_FORWARD_CLICKS = 2;
+    for (let i = 0; i < MAX_FORWARD_CLICKS; i++) {
+      const clicked = await clickNextMonth(page);
+      if (!clicked) {
+        console.log(`右矢印クリック${i + 1}回目: ボタンなし or 無効 — 終了`);
+        break;
+      }
+      console.log(`右矢印クリック${i + 1}回目: 成功 — 再レンダリング待機中...`);
+      await sleep(3000);
+
+      const extraData = await extractCalendarFromDOM(page);
+      console.log(`追加抽出${i + 1}: 販売中=${extraData.available.length} 売切=${extraData.soldOut.length}`);
+
+      // 既存の日付と重複しないようマージ
+      const existingDates = new Set(domData.available.map(d => d.date).concat(domData.soldOut));
+      for (const item of extraData.available) {
+        if (!existingDates.has(item.date)) {
+          domData.available.push(item);
+          existingDates.add(item.date);
+        }
+      }
+      for (const date of extraData.soldOut) {
+        if (!existingDates.has(date)) {
+          domData.soldOut.push(date);
+          existingDates.add(date);
+        }
+      }
+    }
+
     return domData;
   } finally {
     await page.close();
@@ -303,6 +335,25 @@ async function extractCalendarFromDOM(page) {
 
     return { available, soldOut };
   });
+}
+
+/**
+ * カレンダーの右矢印ボタンをクリックして次の月に遷移
+ * @return {boolean} クリック成功ならtrue
+ */
+async function clickNextMonth(page) {
+  try {
+    return await page.evaluate(() => {
+      // right-arrowクラスのボタンを探す
+      const arrow = document.querySelector(".right-arrow, button.right-arrow, [class*='right-arrow']");
+      if (!arrow) return false;
+      if (arrow.disabled || arrow.getAttribute("aria-disabled") === "true") return false;
+      arrow.click();
+      return true;
+    });
+  } catch {
+    return false;
+  }
 }
 
 // === GAS API通信 ===
