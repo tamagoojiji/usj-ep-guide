@@ -253,8 +253,8 @@ async function openPageAndExtractDOM(browser, url) {
         console.log(`右矢印クリック${i + 1}回目: ボタンなし or 無効 — 終了`);
         break;
       }
-      console.log(`右矢印クリック${i + 1}回目: 成功 — 再レンダリング待機中...`);
-      await sleep(3000);
+      console.log(`右矢印クリック${i + 1}回目: 成功（DOM遷移確認済み）`);
+      await sleep(2000); // 価格要素のレンダリング完了待ち
 
       const extraData = await extractCalendarFromDOM(page);
       console.log(`追加抽出${i + 1}: 販売中=${extraData.available.length} 売切=${extraData.soldOut.length}`);
@@ -343,14 +343,38 @@ async function extractCalendarFromDOM(page) {
  */
 async function clickNextMonth(page) {
   try {
-    return await page.evaluate(() => {
-      // right-arrowクラスのボタンを探す
+    // ボタンの存在・有効性を確認
+    const isClickable = await page.evaluate(() => {
       const arrow = document.querySelector(".right-arrow, button.right-arrow, [class*='right-arrow']");
       if (!arrow) return false;
       if (arrow.disabled || arrow.getAttribute("aria-disabled") === "true") return false;
-      arrow.click();
       return true;
     });
+    if (!isClickable) return false;
+
+    // クリック前の日付セットを記録
+    const datesBefore = await page.evaluate(() => {
+      const days = document.querySelectorAll("gds-calendar-day[data-date]");
+      return Array.from(days).map(d => d.getAttribute("data-date"));
+    });
+
+    // Puppeteerのpage.clickでSPAイベントを確実に発火
+    const selector = ".right-arrow, button.right-arrow, [class*='right-arrow']";
+    await page.click(selector);
+
+    // DOMが変わるまで最大10秒待機
+    const changed = await page.waitForFunction(
+      (oldDates) => {
+        const days = document.querySelectorAll("gds-calendar-day[data-date]");
+        const newDates = Array.from(days).map(d => d.getAttribute("data-date"));
+        // 少なくとも1つ新しい日付が出現したら遷移完了
+        return newDates.some(d => !oldDates.includes(d));
+      },
+      { timeout: 10000 },
+      datesBefore
+    ).then(() => true).catch(() => false);
+
+    return changed;
   } catch {
     return false;
   }
