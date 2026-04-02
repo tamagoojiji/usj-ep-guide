@@ -342,68 +342,18 @@ async function extractCalendarFromDOM(page) {
  * @return {boolean} クリック成功ならtrue
  */
 async function clickNextMonth(page) {
-  try {
-    // ナビゲーションボタンのDOM構造をデバッグ出力
-    const navInfo = await page.evaluate(() => {
-      // カレンダーコンテナ周辺のナビゲーション要素を探す
-      const candidates = [
-        ...document.querySelectorAll("[class*='arrow'], [class*='nav'], [class*='next'], [class*='forward'], [class*='right']"),
-        ...document.querySelectorAll("gds-calendar button, gds-calendar-nav button, [class*='calendar'] button"),
-      ];
-      return candidates.map(el => ({
-        tag: el.tagName,
-        class: el.className,
-        id: el.id,
-        ariaLabel: el.getAttribute("aria-label"),
-        disabled: el.disabled,
-        ariaDisabled: el.getAttribute("aria-disabled"),
-        text: (el.textContent || "").trim().substring(0, 50),
-        outerHTML: el.outerHTML.substring(0, 200),
-      }));
-    });
-    if (navInfo.length > 0) {
-      console.log(`ナビゲーション候補: ${navInfo.length}個`);
-      navInfo.forEach((n, i) => console.log(`  [${i}] tag=${n.tag} class="${n.class}" aria="${n.ariaLabel}" disabled=${n.disabled} text="${n.text}"`));
-    } else {
-      console.log("ナビゲーション候補: 0個（arrow/nav/next/forward/right/calendar button なし）");
-      // Shadow DOM内を探索
-      const shadowInfo = await page.evaluate(() => {
-        const results = [];
-        const walk = (root, depth = 0) => {
-          if (depth > 3) return;
-          for (const el of root.querySelectorAll("*")) {
-            if (el.shadowRoot) {
-              const shadowButtons = el.shadowRoot.querySelectorAll("button, [role='button']");
-              for (const btn of shadowButtons) {
-                results.push({
-                  host: el.tagName,
-                  tag: btn.tagName,
-                  class: btn.className,
-                  ariaLabel: btn.getAttribute("aria-label"),
-                  text: (btn.textContent || "").trim().substring(0, 50),
-                  outerHTML: btn.outerHTML.substring(0, 200),
-                });
-              }
-              walk(el.shadowRoot, depth + 1);
-            }
-          }
-        };
-        walk(document);
-        return results;
-      });
-      if (shadowInfo.length > 0) {
-        console.log(`Shadow DOM内ボタン: ${shadowInfo.length}個`);
-        shadowInfo.forEach((s, i) => console.log(`  [${i}] host=${s.host} tag=${s.tag} class="${s.class}" aria="${s.ariaLabel}" text="${s.text}"`));
-      }
-    }
+  // セレクタ: button.right-arrow[aria-label="Next Month"]
+  // GDS-BUTTONSコンポーネント内のbuttonタグを直接ターゲット
+  const NEXT_BTN_SELECTOR = 'button[aria-label="Next Month"]';
 
-    // ボタンの存在・有効性を確認（拡張セレクタ）
-    const isClickable = await page.evaluate(() => {
-      const arrow = document.querySelector(".right-arrow, button.right-arrow, [class*='right-arrow'], [aria-label*='next'], [aria-label*='Next'], [class*='next']");
-      if (!arrow) return false;
-      if (arrow.disabled || arrow.getAttribute("aria-disabled") === "true") return false;
+  try {
+    // ボタンの存在・有効性を確認
+    const isClickable = await page.evaluate((sel) => {
+      const btn = document.querySelector(sel);
+      if (!btn) return false;
+      if (btn.disabled || btn.getAttribute("aria-disabled") === "true") return false;
       return true;
-    });
+    }, NEXT_BTN_SELECTOR);
     if (!isClickable) return false;
 
     // クリック前の日付セットを記録
@@ -413,8 +363,7 @@ async function clickNextMonth(page) {
     });
 
     // Puppeteerのpage.clickでSPAイベントを確実に発火
-    const selector = ".right-arrow, button.right-arrow, [class*='right-arrow']";
-    await page.click(selector);
+    await page.click(NEXT_BTN_SELECTOR);
 
     // DOMが変わるまで最大10秒待機
     const changed = await page.waitForFunction(
