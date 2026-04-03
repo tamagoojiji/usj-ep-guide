@@ -344,40 +344,24 @@ async function extractCalendarFromDOM(page) {
  */
 async function clickNextMonth(page) {
   try {
-    // gds-calendar-dayの祖先を辿ってカレンダーコンテナを見つけ、
-    // その中のNext Monthボタンを特定する
-    const btnIndex = await page.evaluate(() => {
-      const calDay = document.querySelector("gds-calendar-day");
-      if (!calDay) return -1;
-
-      // gds-calendar-dayの祖先を辿って、Next Monthボタンを含むコンテナを探す
-      let container = calDay.parentElement;
-      for (let depth = 0; depth < 15 && container; depth++) {
-        const nextBtn = container.querySelector('button[aria-label="Next Month"]');
-        if (nextBtn && !nextBtn.disabled) {
-          // このボタンが何番目かを特定（page.clickで使うため）
-          const allBtns = document.querySelectorAll('button[aria-label="Next Month"]');
-          for (let i = 0; i < allBtns.length; i++) {
-            if (allBtns[i] === nextBtn) return i;
-          }
-          return 0;
-        }
-        container = container.parentElement;
-      }
-      return -1;
-    });
-
-    if (btnIndex < 0) {
-      console.log("  カレンダー近傍にNext Monthボタンなし");
-      return false;
-    }
-
-    console.log(`  Next Monthボタン: index=${btnIndex}`);
-
-    // 該当ボタンをクリック
+    // 複数のNext Monthボタンが存在する場合、カレンダーに最も近い
+    // （DOM順で最後の）有効なボタンを使用する
     const buttons = await page.$$('button[aria-label="Next Month"]');
-    if (btnIndex >= buttons.length) return false;
-    await buttons[btnIndex].click();
+    if (buttons.length === 0) return false;
+
+    // 最後の有効なボタンを探す
+    let targetBtn = null;
+    for (let i = buttons.length - 1; i >= 0; i--) {
+      const disabled = await buttons[i].evaluate(el => el.disabled || el.getAttribute("aria-disabled") === "true");
+      if (!disabled) {
+        targetBtn = buttons[i];
+        console.log(`  Next Monthボタン: ${buttons.length}個中 index=${i} をクリック`);
+        break;
+      }
+    }
+    if (!targetBtn) return false;
+
+    await targetBtn.click();
 
     // SPA再レンダリング待ち
     await sleep(5000);
