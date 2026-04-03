@@ -347,14 +347,28 @@ async function clickNextMonth(page) {
   const NEXT_BTN_SELECTOR = 'button[aria-label="Next Month"]';
 
   try {
-    // ボタンの存在・有効性を確認
-    const isClickable = await page.evaluate((sel) => {
+    // ボタンの存在・有効性を確認（デバッグ付き）
+    const btnDebug = await page.evaluate((sel) => {
       const btn = document.querySelector(sel);
-      if (!btn) return false;
-      if (btn.disabled || btn.getAttribute("aria-disabled") === "true") return false;
-      return true;
+      if (!btn) {
+        // フォールバック: 全ボタンの中からNext Month / right-arrowを探す
+        const allBtns = document.querySelectorAll("button");
+        const matches = [];
+        for (const b of allBtns) {
+          const aria = b.getAttribute("aria-label") || "";
+          const cls = b.className || "";
+          if (aria.includes("Next") || aria.includes("next") || cls.includes("right-arrow")) {
+            matches.push({ aria, cls, disabled: b.disabled, tag: b.tagName });
+          }
+        }
+        return { found: false, selector: sel, fallbackMatches: matches, totalButtons: allBtns.length };
+      }
+      return { found: true, disabled: btn.disabled, ariaDisabled: btn.getAttribute("aria-disabled"), className: btn.className };
     }, NEXT_BTN_SELECTOR);
-    if (!isClickable) return false;
+    console.log(`Next Monthボタン: ${JSON.stringify(btnDebug)}`);
+
+    if (!btnDebug.found) return false;
+    if (btnDebug.disabled || btnDebug.ariaDisabled === "true") return false;
 
     // クリック前の日付セットを記録
     const datesBefore = await page.evaluate(() => {
