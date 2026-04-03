@@ -250,7 +250,7 @@ async function openPageAndExtractDOM(browser, url) {
     for (let i = 0; i < MAX_FORWARD_CLICKS; i++) {
       const clicked = await clickNextMonth(page);
       if (!clicked) {
-        console.log(`右矢印クリック${i + 1}回目: ボタンなし or 無効 — 終了`);
+        console.log(`右矢印クリック${i + 1}回目: 遷移失敗 — 終了`);
         break;
       }
       console.log(`右矢印クリック${i + 1}回目: 成功（DOM遷移確認済み）`);
@@ -367,29 +367,54 @@ async function clickNextMonth(page) {
     }, NEXT_BTN_SELECTOR);
     console.log(`Next Monthボタン: ${JSON.stringify(btnDebug)}`);
 
-    if (!btnDebug.found) return false;
-    if (btnDebug.disabled || btnDebug.ariaDisabled === "true") return false;
+    if (!btnDebug.found) {
+      console.log("  → ボタンが見つからない");
+      return false;
+    }
+    if (btnDebug.disabled || btnDebug.ariaDisabled === "true") {
+      console.log("  → ボタンが無効");
+      return false;
+    }
 
     // クリック前の日付セットを記録
     const datesBefore = await page.evaluate(() => {
       const days = document.querySelectorAll("gds-calendar-day[data-date]");
-      return Array.from(days).map(d => d.getAttribute("data-date"));
+      const dates = Array.from(days).map(d => d.getAttribute("data-date"));
+      return dates;
     });
+    const lastDateBefore = datesBefore.length > 0 ? datesBefore[datesBefore.length - 1] : "none";
+    console.log(`  → クリック前: ${datesBefore.length}日, 最終日=${lastDateBefore}`);
 
     // Puppeteerのpage.clickでSPAイベントを確実に発火
-    await page.click(NEXT_BTN_SELECTOR);
+    try {
+      await page.click(NEXT_BTN_SELECTOR);
+      console.log("  → page.click 成功");
+    } catch (clickErr) {
+      console.log(`  → page.click 失敗: ${clickErr.message}`);
+      return false;
+    }
 
     // DOMが変わるまで最大10秒待機
     const changed = await page.waitForFunction(
       (oldDates) => {
         const days = document.querySelectorAll("gds-calendar-day[data-date]");
         const newDates = Array.from(days).map(d => d.getAttribute("data-date"));
-        // 少なくとも1つ新しい日付が出現したら遷移完了
         return newDates.some(d => !oldDates.includes(d));
       },
       { timeout: 10000 },
       datesBefore
     ).then(() => true).catch(() => false);
+
+    if (changed) {
+      const datesAfter = await page.evaluate(() => {
+        const days = document.querySelectorAll("gds-calendar-day[data-date]");
+        return Array.from(days).map(d => d.getAttribute("data-date"));
+      });
+      const lastDateAfter = datesAfter.length > 0 ? datesAfter[datesAfter.length - 1] : "none";
+      console.log(`  → DOM変化あり: ${datesAfter.length}日, 最終日=${lastDateAfter}`);
+    } else {
+      console.log("  → DOM変化なし（10秒タイムアウト）— USJが該当月の価格を未公開の可能性");
+    }
 
     return changed;
   } catch {
