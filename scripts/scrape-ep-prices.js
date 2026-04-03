@@ -339,84 +339,29 @@ async function extractCalendarFromDOM(page) {
 
 /**
  * カレンダーの右矢印ボタンをクリックして次の月に遷移
+ * クリック→待機のみ。DOM変化の検出は行わない（WebComponent内部のため検出困難）
  * @return {boolean} クリック成功ならtrue
  */
 async function clickNextMonth(page) {
-  // セレクタ: button.right-arrow[aria-label="Next Month"]
-  // GDS-BUTTONSコンポーネント内のbuttonタグを直接ターゲット
   const NEXT_BTN_SELECTOR = 'button[aria-label="Next Month"]';
 
   try {
-    // ボタンの存在・有効性を確認（デバッグ付き）
-    const btnDebug = await page.evaluate((sel) => {
+    // ボタンの存在・有効性を確認
+    const isClickable = await page.evaluate((sel) => {
       const btn = document.querySelector(sel);
-      if (!btn) {
-        // フォールバック: 全ボタンの中からNext Month / right-arrowを探す
-        const allBtns = document.querySelectorAll("button");
-        const matches = [];
-        for (const b of allBtns) {
-          const aria = b.getAttribute("aria-label") || "";
-          const cls = b.className || "";
-          if (aria.includes("Next") || aria.includes("next") || cls.includes("right-arrow")) {
-            matches.push({ aria, cls, disabled: b.disabled, tag: b.tagName });
-          }
-        }
-        return { found: false, selector: sel, fallbackMatches: matches, totalButtons: allBtns.length };
-      }
-      return { found: true, disabled: btn.disabled, ariaDisabled: btn.getAttribute("aria-disabled"), className: btn.className };
+      if (!btn) return false;
+      if (btn.disabled || btn.getAttribute("aria-disabled") === "true") return false;
+      return true;
     }, NEXT_BTN_SELECTOR);
-    console.log(`Next Monthボタン: ${JSON.stringify(btnDebug)}`);
+    if (!isClickable) return false;
 
-    if (!btnDebug.found) {
-      console.log("  → ボタンが見つからない");
-      return false;
-    }
-    if (btnDebug.disabled || btnDebug.ariaDisabled === "true") {
-      console.log("  → ボタンが無効");
-      return false;
-    }
+    // クリック実行
+    await page.click(NEXT_BTN_SELECTOR);
 
-    // クリック前のカレンダーヘッダー（月名）を記録
-    const headersBefore = await page.evaluate(() => {
-      // gds-calendar-monthやヘッダー要素のテキストを取得
-      const headers = document.querySelectorAll("gds-calendar-month .gds-calendar-month-header, .gds-calendar-month-header, gds-calendar-month");
-      const texts = Array.from(headers).map(h => (h.textContent || "").trim());
-      // フォールバック: data-dateの最後の値
-      const days = document.querySelectorAll("gds-calendar-day[data-date]");
-      const dates = Array.from(days).map(d => d.getAttribute("data-date")).filter(Boolean);
-      return { headers: texts, dateCount: dates.length, lastDate: dates[dates.length - 1] || "none", firstDate: dates[0] || "none" };
-    });
-    console.log(`  → クリック前: headers=${JSON.stringify(headersBefore.headers)}, ${headersBefore.dateCount}日, ${headersBefore.firstDate}~${headersBefore.lastDate}`);
-
-    // Puppeteerのpage.clickでSPAイベントを確実に発火
-    try {
-      await page.click(NEXT_BTN_SELECTOR);
-      console.log("  → page.click 成功");
-    } catch (clickErr) {
-      console.log(`  → page.click 失敗: ${clickErr.message}`);
-      return false;
-    }
-
-    // クリック後に5秒待機（SPAの再レンダリング完了を待つ）
+    // SPA再レンダリング待ち
     await sleep(5000);
 
-    // クリック後の状態を確認
-    const headersAfter = await page.evaluate(() => {
-      const headers = document.querySelectorAll("gds-calendar-month .gds-calendar-month-header, .gds-calendar-month-header, gds-calendar-month");
-      const texts = Array.from(headers).map(h => (h.textContent || "").trim());
-      const days = document.querySelectorAll("gds-calendar-day[data-date]");
-      const dates = Array.from(days).map(d => d.getAttribute("data-date")).filter(Boolean);
-      return { headers: texts, dateCount: dates.length, lastDate: dates[dates.length - 1] || "none", firstDate: dates[0] || "none" };
-    });
-    console.log(`  → クリック後: headers=${JSON.stringify(headersAfter.headers)}, ${headersAfter.dateCount}日, ${headersAfter.firstDate}~${headersAfter.lastDate}`);
-
-    // ヘッダーか日付が変わっていれば遷移成功
-    const changed = JSON.stringify(headersBefore) !== JSON.stringify(headersAfter);
-    if (!changed) {
-      console.log("  → 変化なし — USJが該当月の価格を未公開の可能性");
-    }
-
-    return changed;
+    return true;
   } catch {
     return false;
   }
