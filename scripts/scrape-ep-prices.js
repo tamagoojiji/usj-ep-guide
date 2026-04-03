@@ -376,14 +376,17 @@ async function clickNextMonth(page) {
       return false;
     }
 
-    // クリック前の日付セットを記録
-    const datesBefore = await page.evaluate(() => {
+    // クリック前のカレンダーヘッダー（月名）を記録
+    const headersBefore = await page.evaluate(() => {
+      // gds-calendar-monthやヘッダー要素のテキストを取得
+      const headers = document.querySelectorAll("gds-calendar-month .gds-calendar-month-header, .gds-calendar-month-header, gds-calendar-month");
+      const texts = Array.from(headers).map(h => (h.textContent || "").trim());
+      // フォールバック: data-dateの最後の値
       const days = document.querySelectorAll("gds-calendar-day[data-date]");
-      const dates = Array.from(days).map(d => d.getAttribute("data-date"));
-      return dates;
+      const dates = Array.from(days).map(d => d.getAttribute("data-date")).filter(Boolean);
+      return { headers: texts, dateCount: dates.length, lastDate: dates[dates.length - 1] || "none", firstDate: dates[0] || "none" };
     });
-    const lastDateBefore = datesBefore.length > 0 ? datesBefore[datesBefore.length - 1] : "none";
-    console.log(`  → クリック前: ${datesBefore.length}日, 最終日=${lastDateBefore}`);
+    console.log(`  → クリック前: headers=${JSON.stringify(headersBefore.headers)}, ${headersBefore.dateCount}日, ${headersBefore.firstDate}~${headersBefore.lastDate}`);
 
     // Puppeteerのpage.clickでSPAイベントを確実に発火
     try {
@@ -394,26 +397,23 @@ async function clickNextMonth(page) {
       return false;
     }
 
-    // DOMが変わるまで最大10秒待機
-    const changed = await page.waitForFunction(
-      (oldDates) => {
-        const days = document.querySelectorAll("gds-calendar-day[data-date]");
-        const newDates = Array.from(days).map(d => d.getAttribute("data-date"));
-        return newDates.some(d => !oldDates.includes(d));
-      },
-      { timeout: 10000 },
-      datesBefore
-    ).then(() => true).catch(() => false);
+    // クリック後に5秒待機（SPAの再レンダリング完了を待つ）
+    await sleep(5000);
 
-    if (changed) {
-      const datesAfter = await page.evaluate(() => {
-        const days = document.querySelectorAll("gds-calendar-day[data-date]");
-        return Array.from(days).map(d => d.getAttribute("data-date"));
-      });
-      const lastDateAfter = datesAfter.length > 0 ? datesAfter[datesAfter.length - 1] : "none";
-      console.log(`  → DOM変化あり: ${datesAfter.length}日, 最終日=${lastDateAfter}`);
-    } else {
-      console.log("  → DOM変化なし（10秒タイムアウト）— USJが該当月の価格を未公開の可能性");
+    // クリック後の状態を確認
+    const headersAfter = await page.evaluate(() => {
+      const headers = document.querySelectorAll("gds-calendar-month .gds-calendar-month-header, .gds-calendar-month-header, gds-calendar-month");
+      const texts = Array.from(headers).map(h => (h.textContent || "").trim());
+      const days = document.querySelectorAll("gds-calendar-day[data-date]");
+      const dates = Array.from(days).map(d => d.getAttribute("data-date")).filter(Boolean);
+      return { headers: texts, dateCount: dates.length, lastDate: dates[dates.length - 1] || "none", firstDate: dates[0] || "none" };
+    });
+    console.log(`  → クリック後: headers=${JSON.stringify(headersAfter.headers)}, ${headersAfter.dateCount}日, ${headersAfter.firstDate}~${headersAfter.lastDate}`);
+
+    // ヘッダーか日付が変わっていれば遷移成功
+    const changed = JSON.stringify(headersBefore) !== JSON.stringify(headersAfter);
+    if (!changed) {
+      console.log("  → 変化なし — USJが該当月の価格を未公開の可能性");
     }
 
     return changed;
