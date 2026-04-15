@@ -395,6 +395,40 @@
   // priceRangeData: APIから取得した販売期間情報（通年パス予測判定に使用）
   var priceRangeData = null;
 
+  // データがある月だけタブを生成し、当月または最初のデータ月を返す
+  function buildMonthTabs() {
+    var months = new Set();
+    PASSES.forEach(function (p) {
+      Object.keys(p.pricing).forEach(function (dateStr) {
+        var m = parseInt(dateStr.split("-")[1]);
+        months.add(m);
+      });
+      if (p.lawson && p.lawson.performanceFrom) {
+        var fromM = parseInt(p.lawson.performanceFrom.split("-")[1]);
+        var toDate = p.lawson.salesTo || p.lawson.performanceTo;
+        if (toDate) {
+          var toM = parseInt(toDate.split("-")[1]);
+          for (var mm = fromM; mm <= toM; mm++) months.add(mm);
+        }
+      }
+    });
+    var sorted = Array.from(months).sort(function (a, b) { return a - b; });
+    var container = document.querySelector(".month-tabs");
+    container.innerHTML = "";
+    var now = new Date();
+    var currentM = now.getMonth() + 1;
+    var initialMonth = sorted.indexOf(currentM) >= 0 ? currentM : sorted[0] || 3;
+    sorted.forEach(function (m) {
+      var btn = document.createElement("button");
+      btn.className = "month-tab" + (m === initialMonth ? " active" : "");
+      btn.setAttribute("data-month", m);
+      btn.textContent = m + "月";
+      btn.addEventListener("click", function () { renderCalendar(m); });
+      container.appendChild(btn);
+    });
+    return initialMonth;
+  }
+
   function hasAnyPassOnDate(dateStr) {
     return PASSES.some(function (p) {
       if (p.pricing[dateStr] !== undefined) return true;
@@ -1050,7 +1084,7 @@
     selectedHeight = 0;
     selectedTags = [];
     selectedBudget = null;
-    currentMonth = 3;
+    currentMonth = new Date().getMonth() + 1;
     isTransitioning = false;
   }
 
@@ -1182,7 +1216,7 @@
             btn.textContent = "診断スタート";
             resetAll();
             showScreen("screen-date");
-            renderCalendar(3);
+            renderCalendar(buildMonthTabs());
             renderHeightChoices();
             renderAttractionChoices();
             renderBudgetChoices();
@@ -1192,19 +1226,13 @@
       }
       resetAll();
       showScreen("screen-date");
-      renderCalendar(3);
+      renderCalendar(buildMonthTabs());
       renderHeightChoices();
       renderAttractionChoices();
       renderBudgetChoices();
     });
 
-    // 月タブ
-    document.querySelectorAll(".month-tab").forEach(function (tab) {
-      tab.addEventListener("click", function () {
-        var month = parseInt(tab.getAttribute("data-month"));
-        renderCalendar(month);
-      });
-    });
+    // 月タブはbuildMonthTabs()で動的生成・イベント設定済み
 
     // 戻るボタン
     document.getElementById("back-to-top").addEventListener("click", function () {
@@ -1232,7 +1260,7 @@
     document.getElementById("retry-btn").addEventListener("click", function () {
       resetAll();
       showScreen("screen-date");
-      renderCalendar(3);
+      renderCalendar(buildMonthTabs());
       renderHeightChoices();
       renderAttractionChoices();
       renderBudgetChoices();
