@@ -1057,7 +1057,7 @@
   // === 期限切れチェック ===
   function isExpired() {
     var now = new Date();
-    var expiry = new Date(2026, 5, 1);
+    var expiry = new Date(2027, 3, 1);
     return now >= expiry;
   }
 
